@@ -306,7 +306,7 @@ def classify_wct_ema(
     )
 
     # Attach a diagnostic combination-code array (w*100 + v*10 + t) # Not using it.
-    # combo = ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16) 
+    # combo = ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16)
 
     return _finalise(
         wct, indices,
