@@ -46,7 +46,7 @@ def _get_mpl():
         import matplotlib.colors as mcolors
         import matplotlib.patches as mpatches
         import matplotlib.pyplot as plt
-      
+
         return plt, mcolors, mpatches
     except ImportError:
         raise ImportError(
@@ -138,7 +138,7 @@ def _build_cmap_and_norm(class_codes, class_colors):
 # ---------------------------------------------------------------------------
 
 def _add_outside_legend(fig, ax, patches, title, legend_loc):
-    """Add a patch legend either inside (loc string) 
+    """Add a patch legend either inside (loc string)
     or outside ('outside right' / 'outside bottom')."""
     _, _, mpatches = _get_mpl()
 
