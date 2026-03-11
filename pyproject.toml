@@ -1,0 +1,113 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wetlandmapper"
+dynamic = ["version"]
+description = "Automatic wetland detection, dynamics classification, and Wetland Cover Type characterisation from multispectral time-series data."
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+authors = [
+    { name = "Manudeo Singh", email = "manudeo.singh@uni-potsdam.de" },
+    { name = "Satyasri Allaka" },
+    { name = "Praveen K. Gupta" },
+    { name = "J.G. Patel" },
+    { name = "Rajiv Sinha" },
+]
+keywords = [
+    "wetlands", "remote sensing", "land cover", "time series",
+    "MNDWI", "NDVI", "NDTI", "xarray", "GEE", "Google Earth Engine",
+    "floodplain", "hydrology"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Hydrology",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.24",
+    "xarray>=2023.1",
+    "rioxarray>=0.15",
+]
+
+[project.optional-dependencies]
+gee = [
+    "earthengine-api>=0.1.370",
+    "rasterio>=1.3",
+    "xee>=0.0.5",
+    "dask>=2023.1",
+    "geopandas>=0.14",   # for shapefile / GeoJSON file AOI support
+]
+plot = [
+    "matplotlib>=3.7",
+    "hvplot>=0.9",
+    "holoviews>=1.18",
+    "bokeh>=3.3",
+    "panel>=1.3",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "rasterio>=1.3",
+    "matplotlib>=3.7",
+    "jupyter>=1.0",
+    "nbconvert>=7.0",
+    "black>=23.0",
+    "ruff>=0.1",
+    "build>=1.0",
+    "twine>=5.0",
+]
+all = [
+    "wetlandmapper[gee,plot,dev]"
+]
+
+[project.urls]
+Homepage   = "https://github.com/manudeo/wetlandmapper"
+Repository = "https://github.com/manudeo/wetlandmapper"
+Documentation = "https://wetlandmapper.readthedocs.io"
+"Bug Tracker" = "https://github.com/manudeo/wetlandmapper/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["wetlandmapper*"]
+
+[tool.setuptools_scm]
+write_to = "wetlandmapper/_version.py"
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["wetlandmapper"]
+omit   = ["wetlandmapper/gee.py"]   # GEE requires network; excluded from unit coverage
+
+[tool.coverage.report]
+show_missing = true
+fail_under   = 80
+
+# ---------------------------------------------------------------------------
+# Code style
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 90
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.black]
+line-length = 90
+target-version = ["py39"]

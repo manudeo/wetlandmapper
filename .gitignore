@@ -1,0 +1,42 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Raster outputs (don't commit large files)
+*.tif
+*.tiff
+*.nc
+*.h5
+
+# GEE credentials
+.config/earthengine/
+
+# macOS
+.DS_Store
+
+# Docs build
+docs/_build/
