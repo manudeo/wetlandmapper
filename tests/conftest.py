@@ -108,11 +108,11 @@ def multispectral_ds():
     swir  = np.full(shape, 0.05)
 
     # Zone 1: open clear water — high green, low swir → positive MNDWI
-    #         low red relative to green → negative NDTI (clear)
+    #         nir < red so NDVI is negative, confirming no vegetation signal
     green[0:5, :]  = 0.15
     swir[0:5, :]   = 0.04
     red[0:5, :]    = 0.04
-    nir[0:5, :]    = 0.06
+    nir[0:5, :]    = 0.03   # nir < red → NDVI ≈ -0.14, well below ndvi_veg_low=0.05
 
     # Zone 2: turbid water — high red relative to green → positive NDTI
     green[5:10, :] = 0.12

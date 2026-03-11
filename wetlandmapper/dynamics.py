@@ -163,13 +163,13 @@ def classify_dynamics(
             f"nYear={nYear} requires at least {nYear * 2} time steps, "
             f"but the input has only {n_time}."
         )
+    if not (0 <= thresholdWet <= 100) or not (0 <= thresholdPersis <= 100):
+        raise ValueError("Thresholds must be in the range [0, 100].")
     if thresholdPersis <= thresholdWet:
         raise ValueError(
             f"thresholdPersis ({thresholdPersis}) must be greater than "
             f"thresholdWet ({thresholdWet})."
         )
-    if not (0 <= thresholdWet <= 100) or not (0 <= thresholdPersis <= 100):
-        raise ValueError("Thresholds must be in the range [0, 100].")
 
     # ------------------------------------------------------------------
     # Stage 1: Binary water mask per time step
@@ -226,9 +226,11 @@ def classify_dynamics(
         classification,
     )
 
-    # Priority 6 — Intermittent (wet enough but no directional trend)
+    # Priority 6 — Intermittent (wet enough but no directional class assigned yet)
+    # Must check classification == 0, not classification < 4, because New (2)
+    # and Lost (3) are both < 4 and would incorrectly absorb the +6 otherwise.
     classification = xr.where(
-        (w_percent >= thresholdWet) & (classification < 4),
+        (w_percent >= thresholdWet) & (classification == 0),
         classification + 6,
         classification,
     )

@@ -39,7 +39,7 @@ class TestComputeMNDWI:
             "swir":  xr.DataArray([[0.1]], dims=["y", "x"]),
         })
         mndwi = compute_mndwi(ds)
-        assert np.isnan(float(mndwi))
+        assert np.isnan(mndwi.values).all()
 
     def test_dataarray_input_with_band_coord(self):
         """compute_mndwi should accept a DataArray with a 'band' coordinate."""
@@ -50,7 +50,7 @@ class TestComputeMNDWI:
             coords={"band": ["green", "swir"]},
         )
         mndwi = compute_mndwi(da, green_band="green", swir_band="swir")
-        assert float(mndwi) > 0
+        assert (mndwi.values > 0).all()
 
 
 class TestComputeNDVI:
