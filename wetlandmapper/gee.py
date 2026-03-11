@@ -69,9 +69,9 @@ Authenticate once:  ``earthengine authenticate``
 from __future__ import annotations
 
 import datetime
+import warnings
 from pathlib import Path
 from typing import Sequence
-import warnings
 
 import numpy as np
 import xarray as xr
@@ -672,10 +672,9 @@ def _ee_image_to_dataarray(
     import os
     import tempfile
     import urllib.request
-    
-    import xarray as xr
+
     import rasterio
-         
+    import xarray as xr           
 
     try:
         import rioxarray  # noqa: F401
