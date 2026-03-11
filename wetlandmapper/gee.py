@@ -69,13 +69,12 @@ Authenticate once:  ``earthengine authenticate``
 from __future__ import annotations
 
 import datetime
-import warnings
+from pathlib import Path
 from typing import Sequence
+import warnings
 
 import numpy as np
 import xarray as xr
-
-from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Optional dependency guard
