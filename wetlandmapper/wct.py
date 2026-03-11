@@ -305,8 +305,8 @@ def classify_wct_ema(
         coords=mndwi.coords,
     )
 
-    # Attach a diagnostic combination-code array (w*100 + v*10 + t)
-    # combo = ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16) # Not using it.
+    # Attach a diagnostic combination-code array (w*100 + v*10 + t) # Not using it.
+    # combo = ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16) 
 
     return _finalise(
         wct, indices,
@@ -393,7 +393,7 @@ def classify_wct(
     # Assign in priority order — WCT 1 (most diagnostic) last so it wins
     wct = xr.where(is_moist & ~has_low_veg,                np.int8(5), wct)  # Moist soil
     wct = xr.where(is_water & has_low_veg & ~has_high_veg, np.int8(3), wct)  # Submer. veg
-    wct = xr.where(is_water & is_turbid   & ~has_low_veg,  np.int8(2), wct)  # Turbid 
+    wct = xr.where(is_water & is_turbid   & ~has_low_veg,  np.int8(2), wct)  # Turbid
     # WCT 4: any MNDWI (including negative) when NDVI is high — mirrors EMA behaviour
     wct = xr.where(has_high_veg & ~is_turbid,              np.int8(4), wct)  # Emerg. veg
     wct = xr.where(is_water & ~is_turbid & ~has_low_veg,   np.int8(1), wct)  # Clear water
