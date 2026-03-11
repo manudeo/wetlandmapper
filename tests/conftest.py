@@ -3,6 +3,9 @@ Shared test fixtures for WetlandMapper.
 
 All fixtures create small synthetic rasters so that tests run fast and
 without any external data dependencies.
+
+# Copyright (c) 2026, Manudeo Singh          #
+# Author: Manudeo Singh, March 2026          #
 """
 
 import numpy as np
