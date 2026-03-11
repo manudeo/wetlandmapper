@@ -49,7 +49,8 @@ try:
 except ImportError:
     _HAS_RIO = False
 
-__all__ = ["classify_dynamics", "DYNAMICS_CLASSES", "DYNAMICS_COLORS", "compute_wet_frequency", "aggregate_time"]
+__all__ = ["classify_dynamics", "DYNAMICS_CLASSES", "DYNAMICS_COLORS", 
+           "compute_wet_frequency", "aggregate_time"]
 
 
 # ---------------------------------------------------------------------------
