@@ -674,7 +674,6 @@ def _ee_image_to_dataarray(
     import urllib.request
 
     import rasterio
-
     import xarray as xr
 
     try:
