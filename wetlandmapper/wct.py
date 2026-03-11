@@ -1,5 +1,8 @@
 """
 wct.py
+
+# Copyright (c) 2026, Manudeo Singh          #
+# Author: Manudeo Singh, March 2026          #
 ------
 Wetland Cover Type (WCT) classification from combined MNDWI, NDVI, and NDTI.
 
@@ -42,6 +45,7 @@ WCT class codes (shared by both methods)
 from __future__ import annotations
 
 import warnings
+
 import numpy as np
 import xarray as xr
 
@@ -302,7 +306,7 @@ def classify_wct_ema(
     )
 
     # Attach a diagnostic combination-code array (w*100 + v*10 + t)
-    combo = ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16)
+    # combo = ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16) # Not using it.
 
     return _finalise(
         wct, indices,
@@ -388,10 +392,10 @@ def classify_wct(
 
     # Assign in priority order — WCT 1 (most diagnostic) last so it wins
     wct = xr.where(is_moist & ~has_low_veg,                np.int8(5), wct)  # Moist soil
-    wct = xr.where(is_water & has_low_veg & ~has_high_veg, np.int8(3), wct)  # Submerged veg
-    wct = xr.where(is_water & is_turbid   & ~has_low_veg,  np.int8(2), wct)  # Turbid water
+    wct = xr.where(is_water & has_low_veg & ~has_high_veg, np.int8(3), wct)  # Submer. veg
+    wct = xr.where(is_water & is_turbid   & ~has_low_veg,  np.int8(2), wct)  # Turbid 
     # WCT 4: any MNDWI (including negative) when NDVI is high — mirrors EMA behaviour
-    wct = xr.where(has_high_veg & ~is_turbid,              np.int8(4), wct)  # Emergent veg
+    wct = xr.where(has_high_veg & ~is_turbid,              np.int8(4), wct)  # Emerg. veg
     wct = xr.where(is_water & ~is_turbid & ~has_low_veg,   np.int8(1), wct)  # Clear water
 
     return _finalise(wct, indices, method="threshold",
