@@ -33,10 +33,10 @@ class TestComputeMNDWI:
             compute_mndwi(multispectral_ds, green_band="B3_nonexistent", swir_band="swir")
 
     def test_zero_denominator_returns_nan(self):
-        """When green == swir, denominator is zero → result should be NaN."""
+        """When green == swir == 0, denominator (green+swir) is zero → NaN."""
         ds = xr.Dataset({
-            "green": xr.DataArray([[0.1]], dims=["y", "x"]),
-            "swir":  xr.DataArray([[0.1]], dims=["y", "x"]),
+            "green": xr.DataArray([[0.0]], dims=["y", "x"]),
+            "swir":  xr.DataArray([[0.0]], dims=["y", "x"]),
         })
         mndwi = compute_mndwi(ds)
         assert np.isnan(mndwi.values).all()
