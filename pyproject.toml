@@ -9,11 +9,8 @@ description = "Automatic wetland detection, dynamics classification, and Wetland
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
 authors = [
-    { name = "Manudeo Singh", email = "manudeo.singh@uni-potsdam.de" },
-    { name = "Satyasri Allaka" },
-    { name = "Praveen K. Gupta" },
-    { name = "J.G. Patel" },
-    { name = "Rajiv Sinha" },
+    { name = "Manudeo Singh", email = "manudeo.singh@aber.ac.uk" },
+
 ]
 keywords = [
     "wetlands", "remote sensing", "land cover", "time series",
