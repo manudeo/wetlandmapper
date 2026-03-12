@@ -4,6 +4,7 @@
 [![codecov](https://codecov.io/gh/manudeo-singh/wetlandmapper/branch/main/graph/badge.svg)](https://codecov.io/gh/manudeo-singh/wetlandmapper)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/wetlandmapper.svg)](https://pypi.org/project/wetlandmapper/)
 [![DOI](https://zenodo.org/badge/1179181199.svg)](https://doi.org/10.5281/zenodo.18967176)
 
 **Automatic wetland detection, temporal dynamics classification, and Wetland Cover Type characterisation from multispectral satellite time-series data.**
