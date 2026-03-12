@@ -15,7 +15,7 @@ authors:
     corresponding: true
     affiliation: 1
 affiliations:
-  - name: Department of Geography and Earth Science, Aberystwyth University, Aberystwyth, Wales, UK
+  - name: Department of Geography and Earth Sciences, Aberystwyth University, Aberystwyth, Wales, UK
     index: 1
 date: 11 March 2026
 bibliography: paper.bib
