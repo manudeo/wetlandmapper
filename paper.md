@@ -244,7 +244,7 @@ an AI language model, for tasks including code scaffolding, packaging
 configuration, continuous integration setup, docstring writing, and
 debugging. The scientific methodology, classification algorithms, spectral
 index thresholds, and validation are based entirely on the author's prior
-peer-reviewed work [@singh2021hydrogeomorphic; @singh2022basin; @singh2022integrating], and all
+peer-reviewed work [@singh2021hydrogeomorphic; @singh2022basin; @singh2022deriving], and all
 scientific content, design decisions, and results presented here are the
 author's own.
 
