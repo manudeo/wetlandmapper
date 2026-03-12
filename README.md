@@ -227,5 +227,5 @@ GPL-3.0-or-later — see [LICENSE](LICENSE).
 ## Contact
 
 **Manudeo Singh**  
-Department of Geography and Earth Science, Aberystwyth University, Aberystwyth, Wales, UK  
+Department of Geography and Earth Sciences, Aberystwyth University, Aberystwyth, Wales, UK  
 [manudeo.singh@aber.ac.uk](mailto:manudeo.singh@aber.ac.uk) · ORCID: [0000-0002-3511-8362](https://orcid.org/0000-0002-3511-8362)
