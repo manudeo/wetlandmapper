@@ -196,7 +196,8 @@ dynamics = classify_dynamics(mndwi, nYear=3,
                              thresholdWet=25, thresholdPersis=75)
 dynamics.rio.to_raster("wetland_dynamics.tif")
 
-# --- WCT: single composite → 5 biophysical cover types --- ds_composite is an xarray multispectral dataset (a Landsat .tiff) 
+# --- WCT: single composite → 5 biophysical cover types
+# --- ds_composite is an xarray multispectral dataset (a Landsat .tiff) 
 ds_composite = xr.load_dataset('Landsat.tiff')
 indices = compute_indices(ds_composite, green_band="B3", red_band="B4",
                           nir_band="B5", swir_band="B6")
