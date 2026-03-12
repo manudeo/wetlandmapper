@@ -67,10 +67,10 @@ all = [
 ]
 
 [project.urls]
-Homepage      = "https://github.com/manudeo-singh/wetlandmapper"
-Repository    = "https://github.com/manudeo-singh/wetlandmapper"
+Homepage      = "https://github.com/manudeo/wetlandmapper"
+Repository    = "https://github.com/manudeo/wetlandmapper"
 Documentation = "https://wetlandmapper.readthedocs.io"
-"Bug Tracker" = "https://github.com/manudeo-singh/wetlandmapper/issues"
+"Bug Tracker" = "https://github.com/manudeo/wetlandmapper/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
