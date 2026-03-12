@@ -1,5 +1,8 @@
 """
 plotting.py
+
+# Copyright (c) 2026, Manudeo Singh          #
+# Author: Manudeo Singh, March 2026          #
 -----------
 Convenience functions for visualising WetlandMapper outputs.
 
@@ -40,9 +43,10 @@ __all__ = [
 
 def _get_mpl():
     try:
-        import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
         import matplotlib.patches as mpatches
+        import matplotlib.pyplot as plt
+
         return plt, mcolors, mpatches
     except ImportError:
         raise ImportError(
@@ -134,11 +138,12 @@ def _build_cmap_and_norm(class_codes, class_colors):
 # ---------------------------------------------------------------------------
 
 def _add_outside_legend(fig, ax, patches, title, legend_loc):
-    """Add a patch legend either inside (loc string) or outside ('outside right' / 'outside bottom')."""
+    """Add a patch legend either inside (loc string)
+    or outside ('outside right' / 'outside bottom')."""
     _, _, mpatches = _get_mpl()
 
     if legend_loc == "outside right":
-        legend = ax.legend(
+        ax.legend(
             handles=patches,
             title=title,
             fontsize=8,
@@ -152,7 +157,7 @@ def _add_outside_legend(fig, ax, patches, title, legend_loc):
     elif legend_loc == "outside bottom":
         n = len(patches)
         ncol = min(n, 4)
-        legend = ax.legend(
+        ax.legend(
             handles=patches,
             title=title,
             fontsize=8,

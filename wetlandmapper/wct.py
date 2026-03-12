@@ -1,5 +1,8 @@
 """
 wct.py
+
+# Copyright (c) 2026, Manudeo Singh          #
+# Author: Manudeo Singh, March 2026          #
 ------
 Wetland Cover Type (WCT) classification from combined MNDWI, NDVI, and NDTI.
 
@@ -42,6 +45,7 @@ WCT class codes (shared by both methods)
 from __future__ import annotations
 
 import warnings
+
 import numpy as np
 import xarray as xr
 
@@ -205,7 +209,7 @@ _EMA_LOOKUP_4: np.ndarray = build_ema_lookup_table(n_parts=4)
 def classify_wct_ema(
     indices: xr.Dataset,
     n_parts: int = 4,
-) -> xr.DataArray:
+) -> xr.Dataset:
     """Classify Wetland Cover Types using the original Singh et al. (2022) EMA method.
 
     Each pixel is independently binned into a level (0–n_parts) for MNDWI,
@@ -237,15 +241,24 @@ def classify_wct_ema(
 
     Returns
     -------
-    xr.DataArray
-        Integer raster of WCT codes (dtype int8). Name: ``"wetland_cover_type"``.
-        CRS preserved from input if rioxarray is available.
+    xr.Dataset
+        Dataset with two variables:
+
+        ``"wetland_cover_type"``
+            Integer raster of WCT class codes (dtype int8).
+            CRS preserved from input if rioxarray is available.
+        ``"combination_code"``
+            Integer raster encoding the three index levels that produced
+            each WCT class. Hundreds digit = MNDWI level, tens = NDVI,
+            units = NDTI (e.g. 401 → MNDWI High / NDVI Negative / NDTI
+            Low → WCT 1). Useful for inspecting which index fractions
+            drove the classification at each pixel.
 
     Notes
     -----
-    The returned DataArray carries a ``"combination_codes"`` attribute that
-    encodes the (mndwi_level * 100 + ndvi_level * 10 + ndti_level) value for
-    every pixel, useful for inspection and debugging.
+    The combination code is distinct from the class: two pixels with the
+    same WCT class may have different combination codes, revealing how
+    far each index was from the bin boundaries.
 
     Examples
     --------
@@ -294,26 +307,54 @@ def classify_wct_ema(
     # Vectorised lookup: table[ml[i,j], vl[i,j], tl[i,j]] for every pixel
     wct_vals = table[ml, vl, tl]   # numpy fancy indexing, shape (ny, nx)
 
-    # Wrap in DataArray preserving spatial coordinates
-    wct = xr.DataArray(
-        wct_vals,
-        dims=mndwi.dims,
-        coords=mndwi.coords,
+    # Combination code: encodes the three index levels at every pixel.
+    # Digits: hundreds = MNDWI level, tens = NDVI level, units = NDTI level.
+    # E.g. 401 → MNDWI High(4), NDVI Negative(0), NDTI Low(1) → WCT 1.
+    combo_vals = (
+        ml.astype(np.int16) * 100
+        + vl.astype(np.int16) * 10
+        + tl.astype(np.int16)
     )
 
-    # Attach a diagnostic combination-code array (w*100 + v*10 + t)
-    combo = ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16)
+    # Wrap both arrays as DataArrays preserving spatial coordinates
+    wct = xr.DataArray(wct_vals,   dims=mndwi.dims, coords=mndwi.coords)
+    combo = xr.DataArray(combo_vals, dims=mndwi.dims, coords=mndwi.coords)
 
-    return _finalise(
+    combo.name = "combination_code"
+    combo.attrs.update(
+        long_name="EMA Index-Level Combination Code",
+        encoding=(
+            "hundreds digit = MNDWI level (0-n_parts), "
+            "tens digit = NDVI level, units digit = NDTI level. "
+            f"Level 0 = negative; levels 1-{n_parts} = equal bins "
+            f"over [0, 1] with step {step:.2f}. "
+            "Example: 401 = MNDWI High / NDVI Negative / NDTI Low"
+            " = WCT 1 (Open Clear Water)."
+        ),
+        n_parts=n_parts,
+        step=step,
+    )
+
+    wct = _finalise(
         wct, indices,
         method="EMA-combination-lookup",
         extra_attrs={
             "n_parts": n_parts,
             "step": step,
             "boundaries": [k * step for k in range(n_parts + 1)],
-            "combo_code_info": (
-                "mndwi_level*100 + ndvi_level*10 + ndti_level; "
-                "e.g. 401 = w4v0t1 = Open Clear Water"
+        },
+    )
+
+    return xr.Dataset(
+        {"wetland_cover_type": wct, "combination_code": combo},
+        attrs={
+            "title": (
+                "Wetland Cover Type - EMA combination-lookup classification"
+            ),
+            "references": (
+                "Singh et al. (2022). Environmental Monitoring and "
+                "Assessment, 194(12), 878. "
+                "https://doi.org/10.1007/s10661-022-10541-7"
             ),
         },
     )
@@ -387,12 +428,18 @@ def classify_wct(
     wct = xr.zeros_like(mndwi, dtype=np.int8)
 
     # Assign in priority order — WCT 1 (most diagnostic) last so it wins
-    wct = xr.where(is_moist & ~has_low_veg,                np.int8(5), wct)  # Moist soil
-    wct = xr.where(is_water & has_low_veg & ~has_high_veg, np.int8(3), wct)  # Submerged veg
-    wct = xr.where(is_water & is_turbid   & ~has_low_veg,  np.int8(2), wct)  # Turbid water
-    # WCT 4: any MNDWI (including negative) when NDVI is high — mirrors EMA behaviour
-    wct = xr.where(has_high_veg & ~is_turbid,              np.int8(4), wct)  # Emergent veg
-    wct = xr.where(is_water & ~is_turbid & ~has_low_veg,   np.int8(1), wct)  # Clear water
+    wct = xr.where(is_moist & ~has_low_veg, np.int8(5), wct)        # Moist soil
+    wct = xr.where(                                                  # Submerged veg
+        is_water & has_low_veg & ~has_high_veg, np.int8(3), wct,
+    )
+    wct = xr.where(                                                  # Turbid water
+        is_water & is_turbid & ~has_low_veg, np.int8(2), wct,
+    )
+    # WCT 4: any MNDWI (including negative) when NDVI is high — mirrors EMA
+    wct = xr.where(has_high_veg & ~is_turbid, np.int8(4), wct)      # Emergent veg
+    wct = xr.where(                                                  # Clear water
+        is_water & ~is_turbid & ~has_low_veg, np.int8(1), wct,
+    )
 
     return _finalise(wct, indices, method="threshold",
                      extra_attrs={"thresholds": str(thr)})

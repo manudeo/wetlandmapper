@@ -1,5 +1,8 @@
 """
 dynamics.py
+
+# Copyright (c) 2026, Manudeo Singh          #
+# Author: Manudeo Singh, March 2026          #
 -----------
 Wetland detection and temporal dynamics classification from an MNDWI time series.
 
@@ -39,6 +42,7 @@ Notes
 from __future__ import annotations
 
 import warnings
+
 import numpy as np
 import xarray as xr
 
@@ -48,7 +52,8 @@ try:
 except ImportError:
     _HAS_RIO = False
 
-__all__ = ["classify_dynamics", "DYNAMICS_CLASSES", "DYNAMICS_COLORS", "compute_wet_frequency", "aggregate_time"]
+__all__ = ["classify_dynamics", "DYNAMICS_CLASSES", "DYNAMICS_COLORS",
+           "compute_wet_frequency", "aggregate_time"]
 
 
 # ---------------------------------------------------------------------------

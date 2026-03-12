@@ -96,3 +96,4 @@ class TestComputeIndices:
     def test_spatial_dims_preserved(self, multispectral_ds):
         idx = compute_indices(multispectral_ds)
         assert idx["MNDWI"].dims == ("y", "x")
+

@@ -1,5 +1,8 @@
 """Tests for wetlandmapper.dynamics"""
 
+# Copyright (c) 2026, Manudeo Singh          #
+# Author: Manudeo Singh, March 2026          #
+
 import numpy as np
 import pytest
 import xarray as xr

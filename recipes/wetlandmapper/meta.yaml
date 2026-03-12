@@ -1,5 +1,5 @@
 {% set name = "wetlandmapper" %}
-{% set version = "1.0.0" %}   # keep in sync with PyPI release tag
+{% set version = "1.0.1" %}   # keep in sync with PyPI release tag
 
 package:
   name: {{ name|lower }}
@@ -8,7 +8,7 @@ package:
 source:
   # conda-forge builds from the PyPI source distribution (sdist),
   # not directly from GitHub. This URL is set automatically once the
-  # package is on PyPI. Update the sha256 after each release:
+  # package is on PyPI. NEED to update the sha256 after each release:
   #   python -c "import hashlib, urllib.request; \
   #     data = urllib.request.urlopen('URL').read(); \
   #     print(hashlib.sha256(data).hexdigest())"
@@ -64,4 +64,4 @@ about:
 
 extra:
   recipe-maintainers:
-    - manudeo   # TODO: replace with your GitHub username
+    - manudeo   

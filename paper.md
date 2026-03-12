@@ -184,6 +184,7 @@ setup, are provided in `INSTALL.md` in the repository.
 A minimal end-to-end example for each workflow:
 
 ```python
+import xarray as xr
 from wetlandmapper import compute_mndwi, classify_dynamics
 from wetlandmapper import compute_indices, classify_wct_ema
 from wetlandmapper.gee import fetch
@@ -195,7 +196,8 @@ dynamics = classify_dynamics(mndwi, nYear=3,
                              thresholdWet=25, thresholdPersis=75)
 dynamics.rio.to_raster("wetland_dynamics.tif")
 
-# --- WCT: single composite → 5 biophysical cover types ---
+# --- WCT: single composite → 5 biophysical cover types --- ds_composite is an xarray multispectral dataset (a Landsat .tiff) 
+ds_composite = xr.load_dataset('Landsat.tiff')
 indices = compute_indices(ds_composite, green_band="B3", red_band="B4",
                           nir_band="B5", swir_band="B6")
 wct = classify_wct_ema(indices)

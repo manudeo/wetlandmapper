@@ -1,5 +1,8 @@
 """
 gee.py
+
+# Copyright (c) 2026, Manudeo Singh          #
+# Author: Manudeo Singh, March 2026          #
 ------
 Optional Google Earth Engine (GEE) data acquisition module.
 
@@ -67,9 +70,11 @@ from __future__ import annotations
 
 import datetime
 import warnings
+from pathlib import Path
 from typing import Sequence
 
 import numpy as np
+import xarray as xr
 
 # ---------------------------------------------------------------------------
 # Optional dependency guard
@@ -664,11 +669,12 @@ def _ee_image_to_dataarray(
         Re-raises any download or rasterio error with an informative message
         so callers can catch and fill with NaN.
     """
-    import xarray as xr
-    import rasterio
-    import urllib.request
-    import tempfile
     import os
+    import tempfile
+    import urllib.request
+
+    import rasterio
+    import xarray as xr
 
     try:
         import rioxarray  # noqa: F401

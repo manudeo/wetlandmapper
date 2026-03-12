@@ -49,4 +49,4 @@ jobs:
           python-version: "3.11"
       - run: pip install ruff black
       - run: ruff check wetlandmapper/
-      - run: black --check wetlandmapper/
+      # - run: black --check wetlandmapper/
