@@ -1,7 +1,7 @@
 # WetlandMapper
 
-[![CI](https://github.com/manudeo-singh/wetlandmapper/actions/workflows/ci.yml/badge.svg)](https://github.com/manudeo-singh/wetlandmapper/actions)
-[![codecov](https://codecov.io/gh/manudeo-singh/wetlandmapper/branch/main/graph/badge.svg)](https://codecov.io/gh/manudeo-singh/wetlandmapper)
+[![CI](https://github.com/manudeo/wetlandmapper/actions/workflows/ci.yml/badge.svg)](https://github.com/manudeo/wetlandmapper/actions)
+[![codecov](https://codecov.io/gh/manudeo/wetlandmapper/branch/main/graph/badge.svg)](https://codecov.io/gh/manudeo/wetlandmapper)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/wetlandmapper.svg)](https://pypi.org/project/wetlandmapper/)
