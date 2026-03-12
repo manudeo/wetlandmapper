@@ -65,7 +65,7 @@ earthengine authenticate  # one-time setup
 
 **Full development install:**
 ```bash
-git clone https://github.com/manudeo-singh/wetlandmapper
+git clone https://github.com/manudeo/wetlandmapper
 cd wetlandmapper
 pip install -e ".[all]"
 ```
@@ -215,7 +215,8 @@ If you use `WetlandMapper` in your research, please cite the two underlying meth
 > Singh, M., Allaka, S., Gupta, P. K., Patel, J. G., & Sinha, R. (2022). Deriving wetland-cover types (WCTs) from integration of multispectral indices based on Earth observation data. *Environmental Monitoring and Assessment*, 194(12), 878. https://doi.org/10.1007/s10661-022-10541-7
 
 **Software (JOSS paper — pending publication):**
-> Singh, M. (2026). WetlandMapper: A Python package for automatic wetland mapping, dynamics classification, and cover-type characterisation. *Journal of Open Source Software*. https://doi.org/10.5281/zenodo.XXXXXXX
+> Singh, M. (2026). WetlandMapper: A Python package for automatic wetland mapping, dynamics classification, and cover-type characterisation. *Journal of Open Source Software*.
+https://doi.org/10.5281/zenodo.18967176
 
 ---
 
