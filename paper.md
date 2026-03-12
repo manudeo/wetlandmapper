@@ -235,6 +235,17 @@ environments.
 
 # Acknowledgements
 
-The author acknowledges the ISRO–IIT Kanpur Space Technology Cell and WWF-India for funding the original research underlying both methods, and the Google Earth Engine team for providing cloud-computing access. The author is a Newton International Fellow funded by The Royal Society, London, and gratefully acknowledges this support. The facilities and support provided by Aberystwyth University are also duly acknowledged.     
+The author acknowledges the ISRO–IIT Kanpur Space Technology Cell and WWF-India for funding the original research underlying both methods, and the Google Earth Engine team for providing cloud-computing access. The author is a Newton International Fellow funded by The Royal Society, London, and gratefully acknowledges this support. The facilities and support provided by Aberystwyth University are also duly acknowledged.
+
+## AI Assistance
+
+Development of this software package was assisted by Claude (Anthropic),
+an AI language model, for tasks including code scaffolding, packaging
+configuration, continuous integration setup, docstring writing, and
+debugging. The scientific methodology, classification algorithms, spectral
+index thresholds, and validation are based entirely on the author's prior
+peer-reviewed work [@singh2021hydrogeomorphic; @singh2022basin; @singh2022integrating], and all
+scientific content, design decisions, and results presented here are the
+author's own.
 
 # References
