@@ -165,7 +165,7 @@ operates on any `xarray` `DataArray` or `Dataset` regardless of data source.
 
 ## Dependencies and Installation
 
-`WetlandMapper` requires Python ≥ 3.9. Core dependencies are `numpy`
+`WetlandMapper` requires Python $\geq$ 3.9. Core dependencies are `numpy`
 [@harris2020array], `xarray` [@hoyer2017xarray], and `rioxarray` [@snow2022rioxarray].
 The GEE submodule additionally requires `earthengine-api`, `rasterio`, `xee`, `dask`,
 and `geopandas`. Installation:
