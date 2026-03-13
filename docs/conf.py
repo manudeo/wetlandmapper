@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.abspath('..'))
 
 project   = 'WetlandMapper'
 author    = 'Manudeo Singh'
-copyright = '2024, Manudeo Singh'
+copyright = '2026, Manudeo Singh'
 
 extensions = [
     'sphinx.ext.autodoc',
