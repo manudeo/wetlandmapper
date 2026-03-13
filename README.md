@@ -70,7 +70,9 @@ git clone https://github.com/manudeo/wetlandmapper
 cd wetlandmapper
 pip install -e ".[all]"
 ```
-
+---
+## **Documentation:** 
+### https://wetlandmapper.readthedocs.io/en/latest/
 ---
 
 ## Quick Start
