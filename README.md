@@ -6,6 +6,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/wetlandmapper.svg)](https://pypi.org/project/wetlandmapper/)
 [![DOI](https://zenodo.org/badge/1179181199.svg)](https://doi.org/10.5281/zenodo.18967176)
+[![Documentation](https://readthedocs.org/projects/wetlandmapper/badge/?version=latest)](https://wetlandmapper.readthedocs.io/en/latest/)
 
 **Automatic wetland detection, temporal dynamics classification, and Wetland Cover Type characterisation from multispectral satellite time-series data.**
 
