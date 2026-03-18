@@ -4,9 +4,11 @@
 [![codecov](https://codecov.io/gh/manudeo/wetlandmapper/branch/main/graph/badge.svg)](https://codecov.io/gh/manudeo/wetlandmapper)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
-[![PyPI](https://img.shields.io/pypi/v/wetlandmapper.svg)](https://pypi.org/project/wetlandmapper/)
 [![DOI](https://zenodo.org/badge/1179181199.svg)](https://doi.org/10.5281/zenodo.18967176)
 [![Documentation](https://readthedocs.org/projects/wetlandmapper/badge/?version=latest)](https://wetlandmapper.readthedocs.io/en/latest/)
+
+[![PyPI](https://img.shields.io/pypi/v/wetlandmapper.svg)](https://pypi.org/project/wetlandmapper/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/wetlandmapper?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/wetlandmapper)
 
 **Automatic wetland detection, temporal dynamics classification, and Wetland Cover Type characterisation from multispectral satellite time-series data.**
 
