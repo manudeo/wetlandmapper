@@ -1,14 +1,14 @@
 # WetlandMapper
 
+[![PyPI](https://img.shields.io/pypi/v/wetlandmapper.svg)](https://pypi.org/project/wetlandmapper/)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/wetlandmapper)](https://anaconda.org/conda-forge/wetlandmapper)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/wetlandmapper?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/wetlandmapper)
+[![Documentation](https://readthedocs.org/projects/wetlandmapper/badge/?version=latest)](https://wetlandmapper.readthedocs.io/en/latest/)
 [![CI](https://github.com/manudeo/wetlandmapper/actions/workflows/ci.yml/badge.svg)](https://github.com/manudeo/wetlandmapper/actions)
 [![codecov](https://codecov.io/gh/manudeo/wetlandmapper/branch/main/graph/badge.svg)](https://codecov.io/gh/manudeo/wetlandmapper)
+[![DOI](https://zenodo.org/badge/1179181199.svg)](https://doi.org/10.5281/zenodo.18967176)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
-[![DOI](https://zenodo.org/badge/1179181199.svg)](https://doi.org/10.5281/zenodo.18967176)
-[![Documentation](https://readthedocs.org/projects/wetlandmapper/badge/?version=latest)](https://wetlandmapper.readthedocs.io/en/latest/)
-
-[![PyPI](https://img.shields.io/pypi/v/wetlandmapper.svg)](https://pypi.org/project/wetlandmapper/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/wetlandmapper?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/wetlandmapper)
 
 **Automatic wetland detection, temporal dynamics classification, and Wetland Cover Type characterisation from multispectral satellite time-series data.**
 
@@ -50,20 +50,21 @@ Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, etc.)
 
 ## Installation
 
-**Minimal (core algorithms only):**
+**Install using conda (recommended):**
+```bash
+conda install -c conda-forge wetlandmapper
+```
+
+**Using pip:**
 ```bash
 pip install wetlandmapper
 ```
 
-**With plotting support:**
+**With optional dependencies:**
 ```bash
-pip install "wetlandmapper[plot]"
-```
-
-**With Google Earth Engine support** (includes `earthengine-api`, `rasterio`, `xee`, `dask`, `geopandas`):
-```bash
-pip install "wetlandmapper[gee]"
-earthengine authenticate  # one-time setup
+pip install "wetlandmapper[gee]"    # Google Earth Engine support
+pip install "wetlandmapper[plot]"   # matplotlib, hvplot, bokeh
+pip install "wetlandmapper[all]"    # everything
 ```
 
 **Full development install:**
