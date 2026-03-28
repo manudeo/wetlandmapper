@@ -228,7 +228,7 @@ https://doi.org/10.5281/zenodo.18967176
 
 ## License
 
-GPL-3.0-or-later — see [LICENSE](LICENSE).
+GPL-3.0-or-later — see [LICENSE](LICENSE). The software is provided as-is with no warranties or guarantees of any kind.
 
 ## Contact
 
