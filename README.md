@@ -226,9 +226,11 @@ https://doi.org/10.5281/zenodo.18967176
 
 # Acknowledgements
 
-The author acknowledges the ISRO–IIT Kanpur Space Technology Cell (STC) and WWF-India for funding the original research underlying these methods, and the Google Earth Engine team for providing cloud-computing access. The author is a Newton International Fellow funded by The Royal Society, London, and gratefully acknowledges this support, as well as the facilities provided by Aberystwyth University.
+The author acknowledges the ISRO–IIT Kanpur Space Technology Cell (STC) and WWF-India for funding the original research underlying these methods, and the Google Earth Engine team for providing cloud-computing access. The author is a Newton International Fellow funded by The Royal Society, London, and gratefully acknowledges this support, as well as the facilities provided by Aberystwyth University. 
 
 The author thanks Professor Rajiv Sinha, Principal Investigator of the STC and WWF projects and co-author of the associated algorithm papers, for valuable discussions that helped shape the original methods. Parts of the code were developed during an Alexander von Humboldt Fellowship at University of Potsdam, working with Professor Bodo Bookhagen. The Alexander von Humboldt Foundation, the University of Potsdam, and Prof. Bookhagen are gratefully acknowledged for their support.
+
+
 ---
 
 ## License
