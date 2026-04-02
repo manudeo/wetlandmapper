@@ -438,6 +438,12 @@ def _build_composites(
         For ``"all"``, the input collection is returned unchanged.
     """
     if temporal_aggregation == "all":
+        # Ensure system:time_start is a proper property xee can read
+        collection = collection.map(
+        lambda img: img.set(
+            "system:time_start", img.get("system:time_start")
+        )
+    )
         return collection
 
     start_dt = datetime.date.fromisoformat(start[:10])
