@@ -43,16 +43,18 @@ class TestComputeMNDWI:
 
     def test_zero_denominator_returns_nan(self):
         """When green == swir == 0, denominator (green+swir) is zero → NaN."""
-        ds = xr.Dataset({
-            "green": xr.DataArray([[0.0]], dims=["y", "x"]),
-            "swir":  xr.DataArray([[0.0]], dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "green": xr.DataArray([[0.0]], dims=["y", "x"]),
+                "swir": xr.DataArray([[0.0]], dims=["y", "x"]),
+            }
+        )
         mndwi = compute_mndwi(ds)
         assert np.isnan(mndwi.values).all()
 
     def test_dataarray_input_with_band_coord(self):
         """compute_mndwi should accept a DataArray with a 'band' coordinate."""
-        data = np.array([[[0.15]], [[0.04]]])   # green, swir
+        data = np.array([[[0.15]], [[0.04]]])  # green, swir
         da = xr.DataArray(
             data,
             dims=["band", "y", "x"],
@@ -122,8 +124,8 @@ class TestComputeIndices:
     def test_has_all_three_variables(self, multispectral_ds):
         idx = compute_indices(multispectral_ds)
         assert "MNDWI" in idx
-        assert "NDVI"  in idx
-        assert "NDTI"  in idx
+        assert "NDVI" in idx
+        assert "NDTI" in idx
 
     def test_spatial_dims_preserved(self, multispectral_ds):
         idx = compute_indices(multispectral_ds)
@@ -135,13 +137,15 @@ class TestComputeAWEIsh:
 
     def test_output_is_dataarray(self):
         """compute_aweish should return a DataArray."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray([[0.1]], dims=["y", "x"]),
-            "green": xr.DataArray([[0.15]], dims=["y", "x"]),
-            "nir": xr.DataArray([[0.05]], dims=["y", "x"]),
-            "swir": xr.DataArray([[0.04]], dims=["y", "x"]),
-            "swir2": xr.DataArray([[0.03]], dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray([[0.1]], dims=["y", "x"]),
+                "green": xr.DataArray([[0.15]], dims=["y", "x"]),
+                "nir": xr.DataArray([[0.05]], dims=["y", "x"]),
+                "swir": xr.DataArray([[0.04]], dims=["y", "x"]),
+                "swir2": xr.DataArray([[0.03]], dims=["y", "x"]),
+            }
+        )
         result = compute_aweish(
             ds,
             blue_band="blue",
@@ -154,38 +158,44 @@ class TestComputeAWEIsh:
 
     def test_output_name(self):
         """AWEIsh output should be named 'AWEIsh'."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray([[0.1]], dims=["y", "x"]),
-            "green": xr.DataArray([[0.15]], dims=["y", "x"]),
-            "nir": xr.DataArray([[0.05]], dims=["y", "x"]),
-            "swir": xr.DataArray([[0.04]], dims=["y", "x"]),
-            "swir2": xr.DataArray([[0.03]], dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray([[0.1]], dims=["y", "x"]),
+                "green": xr.DataArray([[0.15]], dims=["y", "x"]),
+                "nir": xr.DataArray([[0.05]], dims=["y", "x"]),
+                "swir": xr.DataArray([[0.04]], dims=["y", "x"]),
+                "swir2": xr.DataArray([[0.03]], dims=["y", "x"]),
+            }
+        )
         result = compute_aweish(ds)
         assert result.name == "AWEIsh"
 
     def test_water_threshold_in_attrs(self):
         """AWEIsh should have water_threshold=0.0 in attrs."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray([[0.1]], dims=["y", "x"]),
-            "green": xr.DataArray([[0.15]], dims=["y", "x"]),
-            "nir": xr.DataArray([[0.05]], dims=["y", "x"]),
-            "swir": xr.DataArray([[0.04]], dims=["y", "x"]),
-            "swir2": xr.DataArray([[0.03]], dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray([[0.1]], dims=["y", "x"]),
+                "green": xr.DataArray([[0.15]], dims=["y", "x"]),
+                "nir": xr.DataArray([[0.05]], dims=["y", "x"]),
+                "swir": xr.DataArray([[0.04]], dims=["y", "x"]),
+                "swir2": xr.DataArray([[0.03]], dims=["y", "x"]),
+            }
+        )
         result = compute_aweish(ds)
         assert "water_threshold" in result.attrs
         assert result.attrs["water_threshold"] == 0.0
 
     def test_output_spatial_dims(self):
         """Output should preserve spatial dimensions (y, x)."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray([[0.1, 0.1]], dims=["y", "x"]),
-            "green": xr.DataArray([[0.15, 0.15]], dims=["y", "x"]),
-            "nir": xr.DataArray([[0.05, 0.05]], dims=["y", "x"]),
-            "swir": xr.DataArray([[0.04, 0.04]], dims=["y", "x"]),
-            "swir2": xr.DataArray([[0.03, 0.03]], dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray([[0.1, 0.1]], dims=["y", "x"]),
+                "green": xr.DataArray([[0.15, 0.15]], dims=["y", "x"]),
+                "nir": xr.DataArray([[0.05, 0.05]], dims=["y", "x"]),
+                "swir": xr.DataArray([[0.04, 0.04]], dims=["y", "x"]),
+                "swir2": xr.DataArray([[0.03, 0.03]], dims=["y", "x"]),
+            }
+        )
         result = compute_aweish(ds)
         assert result.dims == ("y", "x")
 
@@ -255,27 +265,31 @@ class TestComputeWaterIndices:
 
     def test_returns_dataset(self):
         """compute_water_indices should return a Dataset."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+            }
+        )
         result = compute_water_indices(ds)
         assert isinstance(result, xr.Dataset)
 
     def test_has_all_water_indices(self):
         """Result should have MNDWI, NDWI, AWEIsh, AWEInsh variables."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+            }
+        )
         result = compute_water_indices(ds)
         assert "MNDWI" in result
         assert "NDWI" in result
@@ -284,14 +298,16 @@ class TestComputeWaterIndices:
 
     def test_spatial_dims_preserved(self):
         """All indices should preserve spatial dimensions (y, x)."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+            }
+        )
         result = compute_water_indices(ds)
         for var_name in ["MNDWI", "NDWI", "AWEIsh", "AWEInsh"]:
             assert result[var_name].dims == ("y", "x")
@@ -311,18 +327,19 @@ class TestComputeIndicesWithAWEI:
 
     def test_include_awei_true_includes_awei(self):
         """With include_awei=True, result should have AWEI bands."""
-        ds = xr.Dataset({
-            "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-            "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
-        })
+        ds = xr.Dataset(
+            {
+                "blue": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "green": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "red": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "nir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+                "swir2": xr.DataArray(np.random.rand(5, 5), dims=["y", "x"]),
+            }
+        )
         result = compute_indices(ds, include_awei=True)
         assert "MNDWI" in result
         assert "NDVI" in result
         assert "NDTI" in result
         assert "AWEIsh" in result
         assert "AWEInsh" in result
-

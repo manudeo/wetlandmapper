@@ -5,7 +5,29 @@
 - Python 3.9 or later
 - A C compiler and GDAL system libraries (required by `rasterio`; see platform notes below)
 
-## Quick install (most users)
+## Quick install (recommended: conda)
+
+For the best dependency management experience, use **conda** (recommended):
+
+```bash
+# Core functionality
+conda install -c conda-forge wetlandmapper
+
+# With visualisation utilities
+conda install -c conda-forge wetlandmapper matplotlib
+
+# With Google Earth Engine support
+conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio
+
+# Complete installation (core + plot + gee)
+conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio matplotlib
+```
+
+---
+
+## Alternative: pip installation
+
+If you prefer pip:
 
 ```bash
 pip install wetlandmapper
@@ -36,7 +58,7 @@ pip install "wetlandmapper[all]"
 
 ## Google Earth Engine setup
 
-After installing the `[gee]` extras, authenticate once per machine:
+After installing the GEE support, authenticate once per machine:
 
 ```bash
 earthengine authenticate
@@ -58,7 +80,7 @@ Or pass `project=` directly to `fetch()` / `fetch_xee()`.
 
 ## Using shapefiles as AOI
 
-The `[gee]` extras include `geopandas`, which enables you to pass a shapefile path
+The GEE support includes `geopandas`, which enables you to pass a shapefile path
 or GeoJSON file path directly as the `aoi` argument:
 
 ```python
@@ -86,11 +108,13 @@ pip install geopandas
 
 ### Linux (Ubuntu / Debian)
 
-Install GDAL system libraries before `pip install`:
+Install GDAL system libraries before installation:
 
 ```bash
 sudo apt-get install gdal-bin libgdal-dev python3-gdal
 ```
+
+Then use conda (recommended) or pip as above.
 
 ### macOS
 
@@ -98,25 +122,32 @@ Using [Homebrew](https://brew.sh):
 
 ```bash
 brew install gdal
+conda install -c conda-forge wetlandmapper
+```
+
+Or with pip:
+
+```bash
 pip install wetlandmapper
 ```
 
 ### Windows
 
-The simplest approach is to use the pre-built wheels from the
-[Unofficial Windows Binaries](https://www.lfd.uci.edu/~gohlke/pythonlibs/) page,
-or install via conda:
+The simplest approach is to use conda:
 
 ```bash
 conda install -c conda-forge wetlandmapper
 ```
+
+Alternatively, use the pre-built wheels from the
+[Unofficial Windows Binaries](https://www.lfd.uci.edu/~gohlke/pythonlibs/) page with pip.
 
 ---
 
 ## Development install
 
 ```bash
-git clone https://github.com/manudeo-singh/wetlandmapper
+git clone https://github.com/manudeo/wetlandmapper
 cd wetlandmapper
 pip install -e ".[all]"
 ```
@@ -140,6 +171,15 @@ t = xr.DataArray(np.random.uniform(-1, 1, (10, 5, 5)),
 d = classify_dynamics(t, nYear=2)
 print("Dynamics OK:", d.shape)
 ```
+
+---
+
+## Data availability
+
+WetlandMapper source code, documentation, and example datasets are available at:
+- **GitHub**: https://github.com/manudeo/wetlandmapper
+- **PyPI**: https://pypi.org/project/wetlandmapper/
+- **Zenodo**: [DOI and archive link available in paper.md]
 
 ---
 

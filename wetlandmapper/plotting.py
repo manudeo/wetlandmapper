@@ -41,6 +41,7 @@ __all__ = [
 # Lazy matplotlib import
 # ---------------------------------------------------------------------------
 
+
 def _get_mpl():
     try:
         import matplotlib.colors as mcolors
@@ -58,6 +59,7 @@ def _get_mpl():
 # ---------------------------------------------------------------------------
 # Coordinate helpers
 # ---------------------------------------------------------------------------
+
 
 def _spatial_coords(da):
     """Return (x_values, y_values) arrays from a DataArray, or (None, None)."""
@@ -89,10 +91,10 @@ def _imshow_extent(da):
     dx = float(np.abs(x[1] - x[0])) / 2 if len(x) > 1 else 0
     dy = float(np.abs(y[1] - y[0])) / 2 if len(y) > 1 else 0
 
-    left   = float(x.min()) - dx
-    right  = float(x.max()) + dx
+    left = float(x.min()) - dx
+    right = float(x.max()) + dx
     bottom = float(y.min()) - dy
-    top    = float(y.max()) + dy
+    top = float(y.max()) + dy
 
     return (left, right, bottom, top)
 
@@ -102,7 +104,7 @@ def _imshow_origin(da):
     _, y = _spatial_coords(da)
     if y is not None and len(y) > 1:
         return "upper" if y[0] > y[-1] else "lower"
-    return "upper"   # safe default for plain numpy arrays
+    return "upper"  # safe default for plain numpy arrays
 
 
 def _get_2d(da):
@@ -121,21 +123,23 @@ def _get_2d(da):
 # Colormap / norm helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_cmap_and_norm(class_codes, class_colors):
     """Build a discrete Matplotlib colormap from class code → color dicts."""
     _, mcolors, _ = _get_mpl()
 
-    codes  = sorted(class_codes.keys())
+    codes = sorted(class_codes.keys())
     colors = [class_colors[c] for c in codes]
-    cmap   = mcolors.ListedColormap(colors)
+    cmap = mcolors.ListedColormap(colors)
     bounds = [codes[0] - 0.5] + [c + 0.5 for c in codes]
-    norm   = mcolors.BoundaryNorm(bounds, cmap.N)
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
     return cmap, norm, codes
 
 
 # ---------------------------------------------------------------------------
 # Legend helpers
 # ---------------------------------------------------------------------------
+
 
 def _add_outside_legend(fig, ax, patches, title, legend_loc):
     """Add a patch legend either inside (loc string)
@@ -186,6 +190,7 @@ def _add_outside_legend(fig, ax, patches, title, legend_loc):
 # Public plotting functions
 # ---------------------------------------------------------------------------
 
+
 def plot_dynamics(
     dynamics,
     ax=None,
@@ -225,18 +230,20 @@ def plot_dynamics(
     fig, ax : matplotlib Figure and Axes
     """
     from .dynamics import DYNAMICS_CLASSES, DYNAMICS_COLORS
+
     plt, mcolors, mpatches = _get_mpl()
 
     cmap, norm, codes = _build_cmap_and_norm(DYNAMICS_CLASSES, DYNAMICS_COLORS)
     fig, ax = _ensure_axes(ax, figsize)
 
-    da2d   = _get_2d(dynamics)
+    da2d = _get_2d(dynamics)
     extent = _imshow_extent(da2d)
     origin = _imshow_origin(da2d)
 
     ax.imshow(
         da2d.values,
-        cmap=cmap, norm=norm,
+        cmap=cmap,
+        norm=norm,
         origin=origin,
         extent=extent,
         interpolation="nearest",
@@ -285,18 +292,20 @@ def plot_wct(
     fig, ax
     """
     from .wct import WCT_CLASSES, WCT_COLORS
+
     plt, mcolors, mpatches = _get_mpl()
 
     cmap, norm, codes = _build_cmap_and_norm(WCT_CLASSES, WCT_COLORS)
     fig, ax = _ensure_axes(ax, figsize)
 
-    da2d   = _get_2d(wct)
+    da2d = _get_2d(wct)
     extent = _imshow_extent(da2d)
     origin = _imshow_origin(da2d)
 
     ax.imshow(
         da2d.values,
-        cmap=cmap, norm=norm,
+        cmap=cmap,
+        norm=norm,
         origin=origin,
         extent=extent,
         interpolation="nearest",
@@ -308,8 +317,7 @@ def plot_wct(
     if add_colorbar:
         ordered = [c for c in sorted(WCT_CLASSES.keys()) if c != 0] + [0]
         patches = [
-            mpatches.Patch(color=WCT_COLORS[c], label=WCT_CLASSES[c])
-            for c in ordered
+            mpatches.Patch(color=WCT_COLORS[c], label=WCT_CLASSES[c]) for c in ordered
         ]
         _add_outside_legend(fig, ax, patches, "Cover Type", legend_loc)
     else:
@@ -352,18 +360,18 @@ def plot_index(
     fig, ax
     """
     plt, _, _ = _get_mpl()
-    fig, ax   = _ensure_axes(ax, figsize)
+    fig, ax = _ensure_axes(ax, figsize)
 
     if "time" in da.dims:
         if time_step is not None:
-            da2d     = da.isel(time=time_step)
+            da2d = da.isel(time=time_step)
             subtitle = f"t={time_step}"
         else:
-            da2d     = da.mean(dim="time")
+            da2d = da.mean(dim="time")
             subtitle = "temporal mean"
         title_full = f"{index_name} ({subtitle})"
     else:
-        da2d       = da
+        da2d = da
         title_full = index_name
 
     extent = _imshow_extent(da2d)
@@ -371,7 +379,9 @@ def plot_index(
 
     im = ax.imshow(
         da2d.values,
-        cmap=cmap, vmin=vmin, vmax=vmax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
         origin=origin,
         extent=extent,
         interpolation="bilinear",
@@ -412,18 +422,21 @@ def plot_wet_frequency(
     fig, ax
     """
     from .dynamics import compute_wet_frequency
+
     plt, _, _ = _get_mpl()
 
-    freq   = compute_wet_frequency(mndwi, mndwi_threshold=mndwi_threshold)
+    freq = compute_wet_frequency(mndwi, mndwi_threshold=mndwi_threshold)
     fig, ax = _ensure_axes(ax, figsize)
 
-    da2d   = _get_2d(freq)
+    da2d = _get_2d(freq)
     extent = _imshow_extent(da2d)
     origin = _imshow_origin(da2d)
 
     im = ax.imshow(
         da2d.values,
-        cmap="Blues", vmin=0, vmax=100,
+        cmap="Blues",
+        vmin=0,
+        vmax=100,
         origin=origin,
         extent=extent,
         interpolation="bilinear",
@@ -443,6 +456,7 @@ def plot_wet_frequency(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_axes(ax, figsize):
     plt, _, _ = _get_mpl()

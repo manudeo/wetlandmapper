@@ -54,12 +54,18 @@ import xarray as xr
 
 try:
     import rioxarray  # noqa: F401 — registers .rio accessor
+
     _HAS_RIO = True
 except ImportError:
     _HAS_RIO = False
 
-__all__ = ["classify_dynamics", "DYNAMICS_CLASSES", "DYNAMICS_COLORS",
-           "compute_wet_frequency", "aggregate_time"]
+__all__ = [
+    "classify_dynamics",
+    "DYNAMICS_CLASSES",
+    "DYNAMICS_COLORS",
+    "compute_wet_frequency",
+    "aggregate_time",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -68,28 +74,29 @@ __all__ = ["classify_dynamics", "DYNAMICS_CLASSES", "DYNAMICS_COLORS",
 
 DYNAMICS_CLASSES: dict[int, str] = {
     10: "Persistent",
-    6:  "Intermittent",
-    5:  "Intensifying",
-    4:  "Diminishing",
-    3:  "Lost",
-    2:  "New",
-    0:  "Non-wetland",
+    6: "Intermittent",
+    5: "Intensifying",
+    4: "Diminishing",
+    3: "Lost",
+    2: "New",
+    0: "Non-wetland",
 }
 
 DYNAMICS_COLORS: dict[int, str] = {
-    10: "#1a5276",   # deep blue    — Persistent
-    6:  "#76d7c4",   # teal         — Intermittent
-    5:  "#2ecc71",   # green        — Intensifying
-    4:  "#e67e22",   # orange       — Diminishing
-    3:  "#c0392b",   # red          — Lost
-    2:  "#8e44ad",   # purple       — New
-    0:  "#f2f3f4",   # light grey   — Non-wetland
+    10: "#1a5276",  # deep blue    — Persistent
+    6: "#76d7c4",  # teal         — Intermittent
+    5: "#2ecc71",  # green        — Intensifying
+    4: "#e67e22",  # orange       — Diminishing
+    3: "#c0392b",  # red          — Lost
+    2: "#8e44ad",  # purple       — New
+    0: "#f2f3f4",  # light grey   — Non-wetland
 }
 
 
 # ---------------------------------------------------------------------------
 # Main function
 # ---------------------------------------------------------------------------
+
 
 def classify_dynamics(
     water_index: xr.DataArray,
@@ -201,12 +208,12 @@ def classify_dynamics(
     # ------------------------------------------------------------------
     # Stage 2: Temporal aggregation
     # ------------------------------------------------------------------
-    wall      = water_binary.sum(dim="time")
+    wall = water_binary.sum(dim="time")
     whistoric = water_binary.isel(time=slice(0, nYear)).sum(dim="time")
-    wrecent   = water_binary.isel(time=slice(-nYear, None)).sum(dim="time")
+    wrecent = water_binary.isel(time=slice(-nYear, None)).sum(dim="time")
 
     w_percent = (wall / n_time) * 100
-    delta_w   = wrecent - whistoric
+    delta_w = wrecent - whistoric
 
     # ------------------------------------------------------------------
     # Stage 3: Dynamics classification (additive integer encoding)
@@ -300,6 +307,7 @@ def classify_dynamics(
 # Convenience: intermediate rasters (useful for diagnostics)
 # ---------------------------------------------------------------------------
 
+
 def compute_wet_frequency(
     water_index: xr.DataArray,
     water_threshold: float = 0.0,
@@ -328,6 +336,7 @@ def compute_wet_frequency(
 # ---------------------------------------------------------------------------
 # Temporal aggregation utility
 # ---------------------------------------------------------------------------
+
 
 def aggregate_time(
     da: "xr.DataArray | xr.Dataset",
@@ -416,8 +425,8 @@ def aggregate_time(
         return da
 
     _RESAMPLE_RULE = {
-        "annual":   "YE",
-        "monthly":  "ME",
+        "annual": "YE",
+        "monthly": "ME",
         # QS-DEC anchors quarters to December: DJF / MAM / JJA / SON
         "seasonal": "QS-DEC",
     }
@@ -426,9 +435,9 @@ def aggregate_time(
 
     _AGG = {
         "median": resampled.median,
-        "mean":   resampled.mean,
-        "max":    resampled.max,
-        "min":    resampled.min,
+        "mean": resampled.mean,
+        "max": resampled.max,
+        "min": resampled.min,
     }
     result = _AGG[method]()
 
@@ -438,6 +447,6 @@ def aggregate_time(
 
     # Descriptive attribute
     result.attrs["temporal_aggregation"] = freq
-    result.attrs["aggregation_method"]   = method
+    result.attrs["aggregation_method"] = method
 
     return result

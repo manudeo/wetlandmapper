@@ -50,32 +50,36 @@ class TestClassifyWCT:
         indices = compute_indices(multispectral_ds)
         result = classify_wct(indices)
         zone1 = result.isel(y=slice(0, 5))
-        assert (zone1 == 1).all(), \
-            f"Zone 1 (open water) expected WCT 1, got: {np.unique(zone1.values)}"
+        assert (
+            zone1 == 1
+        ).all(), f"Zone 1 (open water) expected WCT 1, got: {np.unique(zone1.values)}"
 
     def test_turbid_zone_classified_correctly(self, multispectral_ds):
         """Zone 2 (rows 5-9): turbid water → WCT 2."""
         indices = compute_indices(multispectral_ds)
         result = classify_wct(indices)
         zone2 = result.isel(y=slice(5, 10))
-        assert (zone2 == 2).all(), \
-            f"Zone 2 (turbid) expected WCT 2, got: {np.unique(zone2.values)}"
+        assert (
+            zone2 == 2
+        ).all(), f"Zone 2 (turbid) expected WCT 2, got: {np.unique(zone2.values)}"
 
     def test_vegetation_zone_classified_correctly(self, multispectral_ds):
         """Zone 3 (rows 10-14): emergent vegetation → WCT 4."""
         indices = compute_indices(multispectral_ds)
         result = classify_wct(indices)
         zone3 = result.isel(y=slice(10, 15))
-        assert (zone3 == 4).all(), \
-            f"Zone 3 (emergent veg) expected WCT 4, got: {np.unique(zone3.values)}"
+        assert (
+            zone3 == 4
+        ).all(), f"Zone 3 (emergent veg) expected WCT 4, got: {np.unique(zone3.values)}"
 
     def test_nonwetland_zone_is_zero(self, multispectral_ds):
         """Zone 4 (rows 15-19): non-wetland → WCT 0."""
         indices = compute_indices(multispectral_ds)
         result = classify_wct(indices)
         zone4 = result.isel(y=slice(15, None))
-        assert (zone4 == 0).all(), \
-            f"Zone 4 (non-wetland) expected 0, got: {np.unique(zone4.values)}"
+        assert (
+            zone4 == 0
+        ).all(), f"Zone 4 (non-wetland) expected 0, got: {np.unique(zone4.values)}"
 
     # ------------------------------------------------------------------
     # Input validation
@@ -83,11 +87,13 @@ class TestClassifyWCT:
 
     def test_missing_variable_raises(self):
         """Dataset missing one of the required indices should raise KeyError."""
-        ds_incomplete = xr.Dataset({
-            "MNDWI": xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
-            "NDVI":  xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
-            # NDTI missing
-        })
+        ds_incomplete = xr.Dataset(
+            {
+                "MNDWI": xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
+                "NDVI": xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
+                # NDTI missing
+            }
+        )
         with pytest.raises(KeyError, match="NDTI"):
             classify_wct(ds_incomplete)
 
@@ -196,10 +202,12 @@ class TestClassifyWCTEMA:
 
     def test_classify_wct_ema_missing_variable_raises(self):
         """Missing required variable should raise KeyError."""
-        ds_incomplete = xr.Dataset({
-            "MNDWI": xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
-            "NDVI":  xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
-        })
+        ds_incomplete = xr.Dataset(
+            {
+                "MNDWI": xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
+                "NDVI": xr.DataArray(np.zeros((5, 5)), dims=["y", "x"]),
+            }
+        )
         with pytest.raises(KeyError):
             classify_wct_ema(ds_incomplete)
 

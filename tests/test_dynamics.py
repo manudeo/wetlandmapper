@@ -35,10 +35,11 @@ class TestClassifyDynamics:
         assert "time" not in result.dims
 
     def test_name_encodes_parameters(self, mndwi_mixed):
-        result = classify_dynamics(mndwi_mixed, nYear=3,
-                                   thresholdWet=25, thresholdPersis=75)
+        result = classify_dynamics(
+            mndwi_mixed, nYear=3, thresholdWet=25, thresholdPersis=75
+        )
         assert "nYear3" in result.name
-        assert "wet25"  in result.name
+        assert "wet25" in result.name
         assert "persis75" in result.name
 
     # ------------------------------------------------------------------
@@ -47,8 +48,7 @@ class TestClassifyDynamics:
 
     def test_all_wet_classified_persistent(self, mndwi_all_wet):
         """When all time steps are wet, every pixel should be Persistent (10)."""
-        result = classify_dynamics(mndwi_all_wet, nYear=3,
-                                   thresholdPersis=75)
+        result = classify_dynamics(mndwi_all_wet, nYear=3, thresholdPersis=75)
         assert (result == 10).all()
 
     def test_all_dry_classified_nonwetland(self, mndwi_all_dry):
@@ -74,8 +74,9 @@ class TestClassifyDynamics:
         hy, hx = ny // 2, nx // 2
 
         # TL quadrant — Persistent
-        assert (result.isel(y=slice(0, hy), x=slice(0, hx)) == 10).all(), \
-            "TL quadrant should be Persistent"
+        assert (
+            result.isel(y=slice(0, hy), x=slice(0, hx)) == 10
+        ).all(), "TL quadrant should be Persistent"
 
         # TR quadrant — New
         tr = result.isel(y=slice(0, hy), x=slice(hx, None))
@@ -94,8 +95,9 @@ class TestClassifyDynamics:
         result = classify_dynamics(mndwi_mixed, nYear=3)
         valid_codes = set(DYNAMICS_CLASSES.keys())
         unique = set(int(v) for v in np.unique(result.values))
-        assert unique.issubset(valid_codes), \
-            f"Unexpected class codes: {unique - valid_codes}"
+        assert unique.issubset(
+            valid_codes
+        ), f"Unexpected class codes: {unique - valid_codes}"
 
     # ------------------------------------------------------------------
     # Input validation
@@ -130,10 +132,10 @@ class TestClassifyDynamics:
     def test_intensifying_classification(self):
         """Pixels with mixed wet/dry history and recent wet trend."""
         # Just verify that the function runs and produces valid codes
-        times = pd.date_range('2020-01-01', periods=6, freq='D')
+        times = pd.date_range("2020-01-01", periods=6, freq="D")
         data = np.zeros((6, 2, 2))
-        data[0:3, :, :] = 0.0   # historic dry
-        data[3:6, :, :] = 0.5   # recent wet
+        data[0:3, :, :] = 0.0  # historic dry
+        data[3:6, :, :] = 0.5  # recent wet
         ds = xr.DataArray(
             data,
             dims=["time", "y", "x"],
@@ -148,10 +150,10 @@ class TestClassifyDynamics:
 
     def test_diminishing_classification(self):
         """Pixels with wet history and recent dry trend."""
-        times = pd.date_range('2020-01-01', periods=6, freq='D')
+        times = pd.date_range("2020-01-01", periods=6, freq="D")
         data = np.zeros((6, 2, 2))
-        data[0:3, :, :] = 0.5   # historic wet
-        data[3:6, :, :] = 0.0   # recent dry
+        data[0:3, :, :] = 0.5  # historic wet
+        data[3:6, :, :] = 0.0  # recent dry
         ds = xr.DataArray(
             data,
             dims=["time", "y", "x"],
@@ -166,15 +168,17 @@ class TestClassifyDynamics:
 
     def test_intermittent_classification(self):
         """Pixels with variable wet/dry without consistent trend."""
-        times = pd.date_range('2020-01-01', periods=6, freq='D')
-        data = np.array([
-            [[0.5, 0.0], [0.0, 0.5]],   # time 0
-            [[0.0, 0.5], [0.5, 0.0]],   # time 1
-            [[0.5, 0.0], [0.0, 0.5]],   # time 2
-            [[0.0, 0.5], [0.5, 0.0]],   # time 3
-            [[0.5, 0.0], [0.0, 0.5]],   # time 4
-            [[0.0, 0.5], [0.5, 0.0]],   # time 5
-        ])
+        times = pd.date_range("2020-01-01", periods=6, freq="D")
+        data = np.array(
+            [
+                [[0.5, 0.0], [0.0, 0.5]],  # time 0
+                [[0.0, 0.5], [0.5, 0.0]],  # time 1
+                [[0.5, 0.0], [0.0, 0.5]],  # time 2
+                [[0.0, 0.5], [0.5, 0.0]],  # time 3
+                [[0.5, 0.0], [0.0, 0.5]],  # time 4
+                [[0.0, 0.5], [0.5, 0.0]],  # time 5
+            ]
+        )
         ds = xr.DataArray(
             data,
             dims=["time", "y", "x"],
@@ -292,11 +296,15 @@ class TestAggregateTime:
         """Test aggregation with Dataset input."""
         # Create multi-variable dataset with proper datetime index
         import pandas as pd
-        times = pd.date_range('2020-01-01', periods=12, freq='D')
-        ds = xr.Dataset({
-            "var1": xr.DataArray(np.random.rand(12, 5, 5), dims=["time", "y", "x"]),
-            "var2": xr.DataArray(np.random.rand(12, 5, 5), dims=["time", "y", "x"]),
-        }, coords={"time": times})
+
+        times = pd.date_range("2020-01-01", periods=12, freq="D")
+        ds = xr.Dataset(
+            {
+                "var1": xr.DataArray(np.random.rand(12, 5, 5), dims=["time", "y", "x"]),
+                "var2": xr.DataArray(np.random.rand(12, 5, 5), dims=["time", "y", "x"]),
+            },
+            coords={"time": times},
+        )
         result = aggregate_time(ds, freq="annual", method="median")
         assert isinstance(result, xr.Dataset)
         assert "var1" in result and "var2" in result

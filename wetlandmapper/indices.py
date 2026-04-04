@@ -49,6 +49,7 @@ __all__ = [
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_band(ds: xr.Dataset | xr.DataArray, band: str) -> xr.DataArray:
     """Return a single band from a Dataset or DataArray.
 
@@ -88,6 +89,7 @@ def _normalised_difference(a: xr.DataArray, b: xr.DataArray) -> xr.DataArray:
 # ---------------------------------------------------------------------------
 # Public functions
 # ---------------------------------------------------------------------------
+
 
 def compute_mndwi(
     ds: xr.Dataset | xr.DataArray,
@@ -304,10 +306,10 @@ def compute_aweish(
     operates on surface reflectance already scaled to [0, 1], so the
     constant is omitted.
     """
-    blue  = _get_band(ds, blue_band)
+    blue = _get_band(ds, blue_band)
     green = _get_band(ds, green_band)
-    nir   = _get_band(ds, nir_band)
-    swir  = _get_band(ds, swir_band)
+    nir = _get_band(ds, nir_band)
+    swir = _get_band(ds, swir_band)
     swir2 = _get_band(ds, swir2_band)
     aweish = blue + 2.5 * green - 1.5 * (nir + swir) - 0.25 * swir2
     aweish.name = "AWEIsh"
@@ -350,8 +352,8 @@ def compute_aweinsh(
         AWEInsh values. A threshold of 0.0 separates water from non-water.
     """
     green = _get_band(ds, green_band)
-    nir   = _get_band(ds, nir_band)
-    swir  = _get_band(ds, swir_band)
+    nir = _get_band(ds, nir_band)
+    swir = _get_band(ds, swir_band)
     aweinsh = 4.0 * (green - swir) - (0.25 * nir + 2.75 * swir)
     aweinsh.name = "AWEInsh"
     aweinsh.attrs.update(
@@ -401,8 +403,8 @@ def compute_indices(
         and optionally ``AWEIsh``, ``AWEInsh``.
     """
     mndwi = compute_mndwi(ds, green_band=green_band, swir_band=swir_band)
-    ndvi  = compute_ndvi(ds, nir_band=nir_band, red_band=red_band)
-    ndti  = compute_ndti(ds, red_band=red_band, green_band=green_band)
+    ndvi = compute_ndvi(ds, nir_band=nir_band, red_band=red_band)
+    ndti = compute_ndti(ds, red_band=red_band, green_band=green_band)
     result = {"MNDWI": mndwi, "NDVI": ndvi, "NDTI": ndti}
 
     if include_awei:

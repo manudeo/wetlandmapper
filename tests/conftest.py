@@ -16,14 +16,15 @@ import xarray as xr
 # ---------------------------------------------------------------------------
 # Dimensions
 # ---------------------------------------------------------------------------
-NY, NX = 20, 20          # spatial grid size
-N_TIMES = 12             # number of time steps (e.g., annual scenes)
+NY, NX = 20, 20  # spatial grid size
+N_TIMES = 12  # number of time steps (e.g., annual scenes)
 DATES = pd.date_range("2010-01-01", periods=N_TIMES, freq="YE")
 
 
 # ---------------------------------------------------------------------------
 # MNDWI fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mndwi_all_wet():
@@ -32,9 +33,11 @@ def mndwi_all_wet():
     return xr.DataArray(
         data,
         dims=["time", "y", "x"],
-        coords={"time": DATES,
-                "y": np.linspace(25.0, 25.19, NY),
-                "x": np.linspace(80.0, 80.19, NX)},
+        coords={
+            "time": DATES,
+            "y": np.linspace(25.0, 25.19, NY),
+            "x": np.linspace(80.0, 80.19, NX),
+        },
         name="MNDWI",
     )
 
@@ -46,9 +49,11 @@ def mndwi_all_dry():
     return xr.DataArray(
         data,
         dims=["time", "y", "x"],
-        coords={"time": DATES,
-                "y": np.linspace(25.0, 25.19, NY),
-                "x": np.linspace(80.0, 80.19, NX)},
+        coords={
+            "time": DATES,
+            "y": np.linspace(25.0, 25.19, NY),
+            "x": np.linspace(80.0, 80.19, NX),
+        },
         name="MNDWI",
     )
 
@@ -81,9 +86,11 @@ def mndwi_mixed():
     return xr.DataArray(
         data,
         dims=["time", "y", "x"],
-        coords={"time": DATES,
-                "y": np.linspace(25.0, 25.19, NY),
-                "x": np.linspace(80.0, 80.19, NX)},
+        coords={
+            "time": DATES,
+            "y": np.linspace(25.0, 25.19, NY),
+            "x": np.linspace(80.0, 80.19, NX),
+        },
         name="MNDWI",
     )
 
@@ -91,6 +98,7 @@ def mndwi_mixed():
 # ---------------------------------------------------------------------------
 # Multi-band dataset fixture (for index computation and WCT tests)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def multispectral_ds():
@@ -105,47 +113,43 @@ def multispectral_ds():
     """
     shape = (NY, NX)
     green = np.full(shape, 0.05)
-    red   = np.full(shape, 0.05)
-    nir   = np.full(shape, 0.10)
-    swir  = np.full(shape, 0.05)
+    red = np.full(shape, 0.05)
+    nir = np.full(shape, 0.10)
+    swir = np.full(shape, 0.05)
 
     # Zone 1: open clear water — high green, low swir → positive MNDWI
     #         nir < red so NDVI is negative, confirming no vegetation signal
-    green[0:5, :]  = 0.15
-    swir[0:5, :]   = 0.04
-    red[0:5, :]    = 0.04
-    nir[0:5, :]    = 0.03   # nir < red → NDVI ≈ -0.14, well below ndvi_veg_low=0.05
+    green[0:5, :] = 0.15
+    swir[0:5, :] = 0.04
+    red[0:5, :] = 0.04
+    nir[0:5, :] = 0.03  # nir < red → NDVI ≈ -0.14, well below ndvi_veg_low=0.05
 
     # Zone 2: turbid water — high red relative to green → positive NDTI
     green[5:10, :] = 0.12
-    swir[5:10, :]  = 0.04
-    red[5:10, :]   = 0.15
-    nir[5:10, :]   = 0.08
+    swir[5:10, :] = 0.04
+    red[5:10, :] = 0.15
+    nir[5:10, :] = 0.08
 
     # Zone 3: emergent vegetation — high NIR, moderate green
     green[10:15, :] = 0.10
-    swir[10:15, :]  = 0.08
-    red[10:15, :]   = 0.05
-    nir[10:15, :]   = 0.45
+    swir[10:15, :] = 0.08
+    red[10:15, :] = 0.05
+    nir[10:15, :] = 0.45
 
     # Zone 4: non-wetland — low green, high swir → strongly negative MNDWI
-    green[15:, :]  = 0.05
-    swir[15:, :]   = 0.25
-    red[15:, :]    = 0.10
-    nir[15:, :]    = 0.15
+    green[15:, :] = 0.05
+    swir[15:, :] = 0.25
+    red[15:, :] = 0.10
+    nir[15:, :] = 0.15
 
     y = np.linspace(25.0, 25.19, NY)
     x = np.linspace(80.0, 80.19, NX)
 
     return xr.Dataset(
         {
-            "green": xr.DataArray(green, dims=["y", "x"],
-                                  coords={"y": y, "x": x}),
-            "red":   xr.DataArray(red,   dims=["y", "x"],
-                                  coords={"y": y, "x": x}),
-            "nir":   xr.DataArray(nir,   dims=["y", "x"],
-                                  coords={"y": y, "x": x}),
-            "swir":  xr.DataArray(swir,  dims=["y", "x"],
-                                  coords={"y": y, "x": x}),
+            "green": xr.DataArray(green, dims=["y", "x"], coords={"y": y, "x": x}),
+            "red": xr.DataArray(red, dims=["y", "x"], coords={"y": y, "x": x}),
+            "nir": xr.DataArray(nir, dims=["y", "x"], coords={"y": y, "x": x}),
+            "swir": xr.DataArray(swir, dims=["y", "x"], coords={"y": y, "x": x}),
         }
     )

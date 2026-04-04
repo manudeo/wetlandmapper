@@ -105,6 +105,7 @@ import xarray as xr
 # ---------------------------------------------------------------------------
 try:
     import ee
+
     _HAS_EE = True
 except ImportError:
     _HAS_EE = False
@@ -121,78 +122,78 @@ __all__ = ["fetch", "fetch_xee", "authenticate", "init"]
 _BAND_MAP: dict[str, dict[str, str]] = {
     # Landsat 4/5 TM and Landsat 7 ETM+ — SR_B1..B5, B7; B6 is thermal
     "LandsatTM_ETM": {
-        "blue":  "SR_B1",
+        "blue": "SR_B1",
         "green": "SR_B2",
-        "red":   "SR_B3",
-        "nir":   "SR_B4",
-        "swir":  "SR_B5",   # SWIR1 (band 5 on TM/ETM+)
-        "swir2": "SR_B7",   # SWIR2 (band 7 on TM/ETM+)
-        "qa":    "QA_PIXEL",
+        "red": "SR_B3",
+        "nir": "SR_B4",
+        "swir": "SR_B5",  # SWIR1 (band 5 on TM/ETM+)
+        "swir2": "SR_B7",  # SWIR2 (band 7 on TM/ETM+)
+        "qa": "QA_PIXEL",
     },
     # Landsat 8/9 OLI — SR_B2..B7 (extra coastal/aerosol B1 pushed others up by one)
     "LandsatOLI": {
-        "blue":  "SR_B2",
+        "blue": "SR_B2",
         "green": "SR_B3",
-        "red":   "SR_B4",
-        "nir":   "SR_B5",
-        "swir":  "SR_B6",   # SWIR1
+        "red": "SR_B4",
+        "nir": "SR_B5",
+        "swir": "SR_B6",  # SWIR1
         "swir2": "SR_B7",
-        "qa":    "QA_PIXEL",
+        "qa": "QA_PIXEL",
     },
     # Sentinel-2 MSI
     "Sentinel2": {
-        "blue":  "B2",
+        "blue": "B2",
         "green": "B3",
-        "red":   "B4",
-        "nir":   "B8",
-        "swir":  "B11",     # SWIR1 (20 m; resampled by GEE to 10 m)
+        "red": "B4",
+        "nir": "B8",
+        "swir": "B11",  # SWIR1 (20 m; resampled by GEE to 10 m)
         "swir2": "B12",
-        "qa":    "QA60",
+        "qa": "QA60",
     },
     # MODIS Terra/Aqua MOD09A1 / MYD09A1 (8-day 500m surface reflectance)
     # Scale: multiply by 0.0001 (stored as int16, range -100 to 16000)
     "MODIS_500m": {
-        "blue":  "sur_refl_b03",
+        "blue": "sur_refl_b03",
         "green": "sur_refl_b04",
-        "red":   "sur_refl_b01",
-        "nir":   "sur_refl_b02",
-        "swir":  "sur_refl_b06",
+        "red": "sur_refl_b01",
+        "nir": "sur_refl_b02",
+        "swir": "sur_refl_b06",
         "swir2": "sur_refl_b07",
-        "qa":    "StateQA",
+        "qa": "StateQA",
     },
     # Common renamed bands used internally after harmonising LandsatAll
     "_harmonised": {
-        "blue":  "blue",
+        "blue": "blue",
         "green": "green",
-        "red":   "red",
-        "nir":   "nir",
-        "swir":  "swir1",
+        "red": "red",
+        "nir": "nir",
+        "swir": "swir1",
         "swir2": "swir2",
-        "qa":    "qa",
+        "qa": "qa",
     },
 }
 
 _COLLECTION_ID: dict[str, str] = {
-    "Landsat4":  "LANDSAT/LT04/C02/T1_L2",
-    "Landsat5":  "LANDSAT/LT05/C02/T1_L2",
-    "Landsat7":  "LANDSAT/LE07/C02/T1_L2",
-    "Landsat8":  "LANDSAT/LC08/C02/T1_L2",
-    "Landsat9":  "LANDSAT/LC09/C02/T1_L2",
+    "Landsat4": "LANDSAT/LT04/C02/T1_L2",
+    "Landsat5": "LANDSAT/LT05/C02/T1_L2",
+    "Landsat7": "LANDSAT/LE07/C02/T1_L2",
+    "Landsat8": "LANDSAT/LC08/C02/T1_L2",
+    "Landsat9": "LANDSAT/LC09/C02/T1_L2",
     "Sentinel2": "COPERNICUS/S2_SR_HARMONIZED",
     "MODIS_Terra": "MODIS/061/MOD09A1",
-    "MODIS_Aqua":  "MODIS/061/MYD09A1",
+    "MODIS_Aqua": "MODIS/061/MYD09A1",
 }
 
 # Map user-facing sensor name → internal band-family key
 _SENSOR_BAND_FAMILY: dict[str, str] = {
-    "Landsat4":  "LandsatTM_ETM",
-    "Landsat5":  "LandsatTM_ETM",
-    "Landsat7":  "LandsatTM_ETM",
-    "Landsat8":  "LandsatOLI",
-    "Landsat9":  "LandsatOLI",
+    "Landsat4": "LandsatTM_ETM",
+    "Landsat5": "LandsatTM_ETM",
+    "Landsat7": "LandsatTM_ETM",
+    "Landsat8": "LandsatOLI",
+    "Landsat9": "LandsatOLI",
     "Sentinel2": "Sentinel2",
     "MODIS_Terra": "MODIS_500m",
-    "MODIS_Aqua":  "MODIS_500m",
+    "MODIS_Aqua": "MODIS_500m",
     # LandsatAll and MODISAll handled separately
 }
 
@@ -204,17 +205,17 @@ _SENSOR_ALIASES: dict[str, str] = {
 # Scale factors: all Landsat C02 L2 use the same formula; S2/MODIS divide by 10000
 _SCALE_FACTOR: dict[str, dict[str, float]] = {
     "LandsatTM_ETM": {"scale": 0.0000275, "offset": -0.2},
-    "LandsatOLI":    {"scale": 0.0000275, "offset": -0.2},
-    "Sentinel2":     {"scale": 0.0001,    "offset":  0.0},
-    "MODIS_500m":    {"scale": 0.0001,    "offset":  0.0},
+    "LandsatOLI": {"scale": 0.0000275, "offset": -0.2},
+    "Sentinel2": {"scale": 0.0001, "offset": 0.0},
+    "MODIS_500m": {"scale": 0.0001, "offset": 0.0},
 }
 
 # Cloud-cover image property per sensor family
 _CLOUD_COVER_PROP: dict[str, str] = {
     "LandsatTM_ETM": "CLOUD_COVER",
-    "LandsatOLI":    "CLOUD_COVER",
-    "Sentinel2":     "CLOUDY_PIXEL_PERCENTAGE",
-    "MODIS_500m":    "CLOUD_COVER",   # not used — MODIS uses pixel-level QA
+    "LandsatOLI": "CLOUD_COVER",
+    "Sentinel2": "CLOUDY_PIXEL_PERCENTAGE",
+    "MODIS_500m": "CLOUD_COVER",  # not used — MODIS uses pixel-level QA
 }
 
 # Approximate operational date ranges for LandsatAll auto-selection
@@ -231,9 +232,9 @@ _L7_SLC_FAILURE_DATE = "2003-06-01"
 
 # Meteorological seasons: name → (months, label_month, label_day)
 _SEASONS: dict[str, tuple[list[int], int, int]] = {
-    "DJF": ([12, 1, 2],  1, 15),
-    "MAM": ([3,  4, 5],  4, 15),
-    "JJA": ([6,  7, 8],  7, 15),
+    "DJF": ([12, 1, 2], 1, 15),
+    "MAM": ([3, 4, 5], 4, 15),
+    "JJA": ([6, 7, 8], 7, 15),
     "SON": ([9, 10, 11], 10, 15),
 }
 
@@ -245,6 +246,7 @@ _ALL_VALID_SENSORS = _VALID_SINGLE_SENSORS | {"LandsatAll", "MODISAll"}
 # ---------------------------------------------------------------------------
 # Authentication helpers
 # ---------------------------------------------------------------------------
+
 
 def authenticate() -> None:
     """Run interactive GEE authentication (opens browser; only needed once)."""
@@ -271,12 +273,14 @@ def init(project: str | None = None) -> None:
 # Cloud masking
 # ---------------------------------------------------------------------------
 
+
 def _mask_landsat_clouds(image: "ee.Image") -> "ee.Image":
     """Mask clouds and cloud shadows using QA_PIXEL bits 3 and 4 (Landsat C02 L2)."""
     qa = image.select("QA_PIXEL")
     mask = (
-        qa.bitwiseAnd(1 << 3).eq(0)          # bit 3 = cloud
-        .And(qa.bitwiseAnd(1 << 4).eq(0))    # bit 4 = cloud shadow
+        qa.bitwiseAnd(1 << 3)
+        .eq(0)  # bit 3 = cloud
+        .And(qa.bitwiseAnd(1 << 4).eq(0))  # bit 4 = cloud shadow
     )
     return image.updateMask(mask)
 
@@ -284,10 +288,7 @@ def _mask_landsat_clouds(image: "ee.Image") -> "ee.Image":
 def _mask_sentinel2_clouds(image: "ee.Image") -> "ee.Image":
     """Mask opaque clouds (bit 10) and cirrus (bit 11) using QA60 (S2 SR)."""
     qa = image.select("QA60")
-    mask = (
-        qa.bitwiseAnd(1 << 10).eq(0)
-        .And(qa.bitwiseAnd(1 << 11).eq(0))
-    )
+    mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
     return image.updateMask(mask).divide(10000)
 
 
@@ -302,14 +303,15 @@ def _mask_modis_clouds(image: "ee.Image") -> "ee.Image":
     are retained.
     """
     qa = image.select("StateQA")
-    cloud_state  = qa.bitwiseAnd(3).eq(0)      # bits 0-1: clear only
-    cloud_shadow = qa.bitwiseAnd(1 << 2).eq(0) # bit 2: no shadow
+    cloud_state = qa.bitwiseAnd(3).eq(0)  # bits 0-1: clear only
+    cloud_shadow = qa.bitwiseAnd(1 << 2).eq(0)  # bit 2: no shadow
     return image.updateMask(cloud_state.And(cloud_shadow))
 
 
 # ---------------------------------------------------------------------------
 # Index computation (server-side, on already-scaled reflectance)
 # ---------------------------------------------------------------------------
+
 
 def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
     """Add MNDWI, NDVI, and NDTI bands to a GEE image using normalizedDifference.
@@ -330,15 +332,16 @@ def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
     | NDTI  | (SR_B3 - SR_B2) / sum | (SR_B4 - SR_B3) / sum | (B4 - B3 ) / sum  |
     +-------+-----------------------+-----------------------+-------------------+
     """
-    mndwi = image.normalizedDifference([bands["green"], bands["swir"] ]).rename("MNDWI")
-    ndvi  = image.normalizedDifference([bands["nir"],   bands["red"]  ]).rename("NDVI")
-    ndti  = image.normalizedDifference([bands["red"],   bands["green"]]).rename("NDTI")
+    mndwi = image.normalizedDifference([bands["green"], bands["swir"]]).rename("MNDWI")
+    ndvi = image.normalizedDifference([bands["nir"], bands["red"]]).rename("NDVI")
+    ndti = image.normalizedDifference([bands["red"], bands["green"]]).rename("NDTI")
     return image.addBands([mndwi, ndvi, ndti])
 
 
 # ---------------------------------------------------------------------------
 # LandsatAll: build merged, harmonised collection
 # ---------------------------------------------------------------------------
+
 
 def _build_landsat_all(
     ee_geom: "ee.Geometry",
@@ -382,16 +385,16 @@ def _build_landsat_all(
 
         # Intersect requested range with operational window
         eff_start = max(start[:10], op_start)
-        eff_end   = min(end[:10],   op_end)
+        eff_end = min(end[:10], op_end)
 
         if eff_start >= eff_end:
-            continue   # mission not active in requested period
+            continue  # mission not active in requested period
 
         # For Landsat 7, optionally exclude SLC-off data
         if mission == "Landsat7" and not use_slc_off:
             eff_end = min(eff_end, _L7_SLC_FAILURE_DATE)
             if eff_start >= eff_end:
-                continue   # SLC-on period entirely outside requested range
+                continue  # SLC-on period entirely outside requested range
 
         col = (
             ee.ImageCollection(_COLLECTION_ID[mission])
@@ -409,18 +412,24 @@ def _build_landsat_all(
         col = col.map(
             lambda img: (
                 img.multiply(sf["scale"])
-                   .add(sf["offset"])
-                   .copyProperties(img, ["system:time_start"])
+                .add(sf["offset"])
+                .copyProperties(img, ["system:time_start"])
             )
         )
 
         # Rename to common harmonised band names
         col = col.map(
             lambda img: img.select(
-                [bm["blue"],  bm["green"], bm["red"],
-                 bm["nir"],   bm["swir"],  bm["swir2"], bm["qa"]],
-                ["blue",      "green",     "red",
-                 "nir",       "swir1",     "swir2",     "qa"]
+                [
+                    bm["blue"],
+                    bm["green"],
+                    bm["red"],
+                    bm["nir"],
+                    bm["swir"],
+                    bm["swir2"],
+                    bm["qa"],
+                ],
+                ["blue", "green", "red", "nir", "swir1", "swir2", "qa"],
             )
         )
 
@@ -476,28 +485,26 @@ def _build_modis_all(
 
     def _prep(collection_id):
         col = (
-            ee.ImageCollection(collection_id)
-            .filterBounds(ee_geom)
-            .filterDate(start, end)
+            ee.ImageCollection(collection_id).filterBounds(ee_geom).filterDate(start, end)
         )
         col = col.map(_mask_modis_clouds)
         col = col.map(
             lambda img: (
-                img.multiply(sf["scale"])
-                   .copyProperties(img, ["system:time_start"])
+                img.multiply(sf["scale"]).copyProperties(img, ["system:time_start"])
             )
         )
         col = col.map(lambda img: _add_indices(img, bm))
         return col
 
     terra = _prep("MODIS/061/MOD09A1")
-    aqua  = _prep("MODIS/061/MYD09A1")
+    aqua = _prep("MODIS/061/MYD09A1")
     return terra.merge(aqua)
 
 
 # ---------------------------------------------------------------------------
 # Server-side temporal compositing with empty-period safeguard
 # ---------------------------------------------------------------------------
+
 
 def _make_nan_image(bands: list[str], timestamp: "ee.Number") -> "ee.Image":
     """Create a constant all-masked image with the specified band names.
@@ -507,9 +514,9 @@ def _make_nan_image(bands: list[str], timestamp: "ee.Number") -> "ee.Image":
     xarray output — no actual NaN constant is needed.
     """
     # Build a multi-band constant image, then mask all pixels
-    img = ee.Image.cat(
-        [ee.Image.constant(0).rename(b) for b in bands]
-    ).updateMask(ee.Image.constant(0))   # mask = 0 everywhere → all pixels masked
+    img = ee.Image.cat([ee.Image.constant(0).rename(b) for b in bands]).updateMask(
+        ee.Image.constant(0)
+    )  # mask = 0 everywhere → all pixels masked
     return img.set("system:time_start", timestamp)
 
 
@@ -548,41 +555,39 @@ def _build_composites(
     if temporal_aggregation == "all":
         # Ensure system:time_start is a proper property xee can read
         collection = collection.map(
-        lambda img: img.set(
-            "system:time_start", img.get("system:time_start")
+            lambda img: img.set("system:time_start", img.get("system:time_start"))
         )
-    )
         return collection
 
     start_dt = datetime.date.fromisoformat(start[:10])
-    end_dt   = datetime.date.fromisoformat(end[:10])
+    end_dt = datetime.date.fromisoformat(end[:10])
     start_yr = start_dt.year
-    end_yr   = end_dt.year
-    images   = []
+    end_yr = end_dt.year
+    images = []
 
-    def _safe_composite(period_col: "ee.ImageCollection",
-                        timestamp: "ee.Number") -> "ee.Image":
+    def _safe_composite(
+        period_col: "ee.ImageCollection", timestamp: "ee.Number"
+    ) -> "ee.Image":
         """Return a median composite or a masked fallback image, server-side."""
         real = period_col.median().set("system:time_start", timestamp)
         fallback = _make_nan_image(index_bands, timestamp)
-        return ee.Image(
-            ee.Algorithms.If(period_col.size().gt(0), real, fallback)
-        )
+        return ee.Image(ee.Algorithms.If(period_col.size().gt(0), real, fallback))
 
     if temporal_aggregation == "annual":
         for yr in range(start_yr, end_yr + 1):
             col = collection.filterDate(f"{yr}-01-01", f"{yr + 1}-01-01")
-            ts  = ee.Date.fromYMD(yr, 7, 1).millis()
+            ts = ee.Date.fromYMD(yr, 7, 1).millis()
             images.append(_safe_composite(col, ts))
 
     elif temporal_aggregation == "monthly":
         cur = start_dt.replace(day=1)
         while cur.year < end_yr or (cur.year == end_yr and cur.month <= end_dt.month):
             yr, mo = cur.year, cur.month
-            nxt = (datetime.date(yr + 1, 1, 1) if mo == 12
-                   else datetime.date(yr, mo + 1, 1))
+            nxt = (
+                datetime.date(yr + 1, 1, 1) if mo == 12 else datetime.date(yr, mo + 1, 1)
+            )
             col = collection.filterDate(cur.isoformat(), nxt.isoformat())
-            ts  = ee.Date.fromYMD(yr, mo, 15).millis()
+            ts = ee.Date.fromYMD(yr, mo, 15).millis()
             images.append(_safe_composite(col, ts))
             cur = nxt
 
@@ -591,10 +596,13 @@ def _build_composites(
             for sname, (months, tag_mo, tag_day) in _SEASONS.items():
                 season_parts = []
                 for mo in months:
-                    mo_yr  = yr - 1 if (sname == "DJF" and mo == 12) else yr
+                    mo_yr = yr - 1 if (sname == "DJF" and mo == 12) else yr
                     mo_start = datetime.date(mo_yr, mo, 1)
-                    mo_end   = (datetime.date(mo_yr + 1, 1, 1) if mo == 12
-                                else datetime.date(mo_yr, mo + 1, 1))
+                    mo_end = (
+                        datetime.date(mo_yr + 1, 1, 1)
+                        if mo == 12
+                        else datetime.date(mo_yr, mo + 1, 1)
+                    )
                     season_parts.append(
                         collection.filterDate(mo_start.isoformat(), mo_end.isoformat())
                     )
@@ -616,6 +624,7 @@ def _build_composites(
 # ---------------------------------------------------------------------------
 # Core download helpers
 # ---------------------------------------------------------------------------
+
 
 def _parse_aoi(aoi: "dict | str | Path") -> "ee.Geometry":
     """Convert an AOI to an ``ee.Geometry``.
@@ -696,8 +705,7 @@ def _resolve_sensor(sensor: str) -> str:
     sensor = _SENSOR_ALIASES.get(sensor, sensor)
     if sensor not in _ALL_VALID_SENSORS:
         raise ValueError(
-            f"Unknown sensor {sensor!r}. "
-            f"Valid options: {sorted(_ALL_VALID_SENSORS)}"
+            f"Unknown sensor {sensor!r}. " f"Valid options: {sorted(_ALL_VALID_SENSORS)}"
         )
     return sensor
 
@@ -741,7 +749,8 @@ def _build_single_sensor_collection(
                 f"Landsat 7 SLC-off images after {_L7_SLC_FAILURE_DATE} "
                 "are excluded (use_slc_off=False). "
                 "Only the 1999-2003 good-quality record will be used.",
-                UserWarning, stacklevel=4
+                UserWarning,
+                stacklevel=4,
             )
 
     collection = ee.ImageCollection(_COLLECTION_ID[sensor])
@@ -753,16 +762,14 @@ def _build_single_sensor_collection(
         collection = collection.map(_mask_sentinel2_clouds)
         collection = collection.map(
             lambda img: (
-                img.multiply(sf["scale"])
-                   .copyProperties(img, ["system:time_start"])
+                img.multiply(sf["scale"]).copyProperties(img, ["system:time_start"])
             )
         )
     elif sensor in ("MODIS_Terra", "MODIS_Aqua"):
         collection = collection.map(_mask_modis_clouds)
         collection = collection.map(
             lambda img: (
-                img.multiply(sf["scale"])
-                   .copyProperties(img, ["system:time_start"])
+                img.multiply(sf["scale"]).copyProperties(img, ["system:time_start"])
             )
         )
     else:
@@ -770,8 +777,8 @@ def _build_single_sensor_collection(
         collection = collection.map(
             lambda img: (
                 img.multiply(sf["scale"])
-                   .add(sf["offset"])
-                   .copyProperties(img, ["system:time_start"])
+                .add(sf["offset"])
+                .copyProperties(img, ["system:time_start"])
             )
         )
 
@@ -804,17 +811,20 @@ def _ee_image_to_dataarray(
 
     try:
         import rioxarray  # noqa: F401
+
         _rio = True
     except ImportError:
         _rio = False
 
     try:
-        url = image.getDownloadURL({
-            "scale":  scale,
-            "region": ee_geom,
-            "format": "GEO_TIFF",
-            "crs":    "EPSG:4326",
-        })
+        url = image.getDownloadURL(
+            {
+                "scale": scale,
+                "region": ee_geom,
+                "format": "GEO_TIFF",
+                "crs": "EPSG:4326",
+            }
+        )
     except Exception as exc:
         raise RuntimeError(f"GEE getDownloadURL failed: {exc}") from exc
 
@@ -850,6 +860,7 @@ def _ee_image_to_dataarray(
 # ---------------------------------------------------------------------------
 # Public API: fetch()
 # ---------------------------------------------------------------------------
+
 
 def fetch(
     aoi: "dict | str",
@@ -978,9 +989,7 @@ def fetch(
 
     # Build collection (merged or single sensor)
     if sensor == "LandsatAll":
-        collection = _build_landsat_all(
-            ee_geom, start, end, max_cloud_cover, use_slc_off
-        )
+        collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
     elif sensor == "MODISAll":
         collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
     else:
@@ -1006,30 +1015,27 @@ def fetch(
 
     import xarray as xr
 
-    image_list  = collection.toList(n_images)
+    image_list = collection.toList(n_images)
     result_ds_list: list["xr.Dataset"] = []
     skipped = 0
 
     for i in range(n_images):
         img = ee.Image(image_list.get(i))
-        ts  = img.get("system:time_start").getInfo()
-        dt  = np.datetime64(
-            datetime.datetime.utcfromtimestamp(ts / 1000)
-        )
+        ts = img.get("system:time_start").getInfo()
+        dt = np.datetime64(datetime.datetime.utcfromtimestamp(ts / 1000))
 
         band_arrays: dict[str, "xr.DataArray"] = {}
         failed = False
 
         for idx in indices_list:
             try:
-                da_band = _ee_image_to_dataarray(
-                    img.select(idx), ee_geom, scale
-                )
+                da_band = _ee_image_to_dataarray(img.select(idx), ee_geom, scale)
                 band_arrays[idx] = da_band
             except RuntimeError as exc:
                 warnings.warn(
                     f"Skipping time step {dt} (index '{idx}'): {exc}",
-                    UserWarning, stacklevel=2
+                    UserWarning,
+                    stacklevel=2,
                 )
                 failed = True
                 break
@@ -1038,9 +1044,7 @@ def fetch(
             skipped += 1
             continue
 
-        ds_t = xr.Dataset(
-            {k: v.expand_dims(time=[dt]) for k, v in band_arrays.items()}
-        )
+        ds_t = xr.Dataset({k: v.expand_dims(time=[dt]) for k, v in band_arrays.items()})
         result_ds_list.append(ds_t)
 
     if not result_ds_list:
@@ -1053,7 +1057,8 @@ def fetch(
         warnings.warn(
             f"{skipped} of {n_images} time step(s) were skipped due to "
             "download errors or empty composites.",
-            UserWarning, stacklevel=2
+            UserWarning,
+            stacklevel=2,
         )
 
     combined = xr.concat(result_ds_list, dim="time")
@@ -1068,6 +1073,7 @@ def fetch(
 # ---------------------------------------------------------------------------
 # Public API: fetch_xee()
 # ---------------------------------------------------------------------------
+
 
 def fetch_xee(
     aoi: "dict | str",
@@ -1170,8 +1176,7 @@ def fetch_xee(
         import dask  # noqa: F401
     except ImportError:
         raise ImportError(
-            "dask is required for fetch_xee(). "
-            "Install:  pip install dask"
+            "dask is required for fetch_xee(). " "Install:  pip install dask"
         )
 
     if temporal_aggregation not in _VALID_AGGREGATIONS:
@@ -1204,9 +1209,7 @@ def fetch_xee(
 
     # Build collection
     if sensor == "LandsatAll":
-        collection = _build_landsat_all(
-            ee_geom, start, end, max_cloud_cover, use_slc_off
-        )
+        collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
     elif sensor == "MODISAll":
         collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
     else:
@@ -1222,7 +1225,7 @@ def fetch_xee(
     import xarray as xr
 
     # xee needs projection with embedded scale, not a bare scale kwarg
-    projection     = ee.Projection("EPSG:4326").atScale(scale)
+    projection = ee.Projection("EPSG:4326").atScale(scale)
     default_chunks = chunks or {"time": 1, "lon": 512, "lat": 512}
 
     ds_lazy = xr.open_dataset(
@@ -1251,6 +1254,7 @@ def fetch_xee(
 # ---------------------------------------------------------------------------
 # Dependency guard
 # ---------------------------------------------------------------------------
+
 
 def _require_ee() -> None:
     if not _HAS_EE:

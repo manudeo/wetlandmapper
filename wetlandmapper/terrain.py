@@ -49,6 +49,7 @@ import xarray as xr
 
 try:
     import rioxarray  # noqa: F401
+
     _HAS_RIO = True
 except ImportError:
     _HAS_RIO = False
@@ -118,8 +119,7 @@ def compute_slope(
     _check_dem(dem)
     if units not in {"degrees", "radians", "percent"}:
         raise ValueError(
-            f"units must be one of 'degrees', 'radians', or 'percent'. "
-            f"Got {units!r}."
+            f"units must be one of 'degrees', 'radians', or 'percent'. " f"Got {units!r}."
         )
 
     y_dim, x_dim = _spatial_dims(dem)
@@ -137,7 +137,7 @@ def compute_slope(
     dx_m = abs(float(np.mean(np.diff(x_coords)))) * 111_320.0 * np.cos(mid_lat_rad)
 
     grad_y, grad_x = np.gradient(elev, dy_m, dx_m)
-    slope_rad = np.arctan(np.sqrt(grad_x ** 2 + grad_y ** 2))
+    slope_rad = np.arctan(np.sqrt(grad_x**2 + grad_y**2))
 
     if units == "degrees":
         slope_val = np.degrees(slope_rad)
@@ -201,11 +201,9 @@ def compute_tpi(
         raise ValueError("window must be an integer >= 3.")
 
     y_dim, x_dim = _spatial_dims(dem)
-    focal_mean = (
-        dem
-        .rolling({y_dim: window, x_dim: window}, center=True, min_periods=1)
-        .mean()
-    )
+    focal_mean = dem.rolling(
+        {y_dim: window, x_dim: window}, center=True, min_periods=1
+    ).mean()
     tpi = dem - focal_mean
     tpi.name = "TPI"
     tpi.attrs.update(
@@ -322,9 +320,7 @@ def mask_terrain_artifacts(
         not isinstance(local_range_window, int) or local_range_window < 3
     ):
         raise ValueError("local_range_window must be an integer >= 3.")
-    if max_tpi is not None and (
-        not isinstance(tpi_window, int) or tpi_window < 3
-    ):
+    if max_tpi is not None and (not isinstance(tpi_window, int) or tpi_window < 3):
         raise ValueError("tpi_window must be an integer >= 3.")
 
     terrain_mask = xr.ones_like(dem, dtype=bool)
@@ -333,12 +329,10 @@ def mask_terrain_artifacts(
     if max_slope is not None:
         terrain_mask = terrain_mask & (compute_slope(dem) <= max_slope)
     if max_tpi is not None:
-        tpi_result = compute_tpi(dem, window=tpi_window).abs() <= max_tpi
+        tpi_result = abs(compute_tpi(dem, window=tpi_window)) <= max_tpi
         terrain_mask = terrain_mask & tpi_result
     if max_local_range is not None:
-        lr_result = compute_local_range(
-            dem, window=local_range_window
-        ) <= max_local_range
+        lr_result = compute_local_range(dem, window=local_range_window) <= max_local_range
         terrain_mask = terrain_mask & lr_result
 
     if invert:

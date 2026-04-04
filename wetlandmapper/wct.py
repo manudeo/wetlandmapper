@@ -51,6 +51,7 @@ import xarray as xr
 
 try:
     import rioxarray  # noqa: F401
+
     _HAS_RIO = True
 except ImportError:
     _HAS_RIO = False
@@ -79,17 +80,17 @@ WCT_CLASSES: dict[int, str] = {
 }
 
 WCT_COLORS: dict[int, str] = {
-    0: "#f2f3f4",   # light grey   — Non-wetland
-    1: "#1a78c2",   # blue         — Open Clear Water
-    2: "#d4a017",   # amber/brown  — Turbid Water
-    3: "#27ae60",   # medium green — Submerged Aquatic Veg.
-    4: "#145a32",   # dark green   — Emergent / Floating Veg.
-    5: "#a04000",   # brown        — Moist Soil
+    0: "#f2f3f4",  # light grey   — Non-wetland
+    1: "#1a78c2",  # blue         — Open Clear Water
+    2: "#d4a017",  # amber/brown  — Turbid Water
+    3: "#27ae60",  # medium green — Submerged Aquatic Veg.
+    4: "#145a32",  # dark green   — Emergent / Floating Veg.
+    5: "#a04000",  # brown        — Moist Soil
 }
 
 WCT_EMA_QUARTILE_BOUNDARIES: dict = {
     "description": "Equal-width bins over positive [0,1] range with n_parts=4",
-    "boundaries":  [0.0, 0.25, 0.50, 0.75, 1.00],
+    "boundaries": [0.0, 0.25, 0.50, 0.75, 1.00],
     "level_names": {
         0: "Negative/Dry (< 0)",
         1: "Low          [0.00, 0.25)",
@@ -105,17 +106,18 @@ WCT_EMA_QUARTILE_BOUNDARIES: dict = {
 # ---------------------------------------------------------------------------
 
 _DEFAULT_THRESHOLDS: dict[str, float] = {
-    "mndwi_water":      0.0,    # MNDWI above which pixel is open-water-dominated
-    "mndwi_moist":     -0.2,    # MNDWI lower bound for moist-soil zone
-    "ndvi_veg_high":    0.2,    # NDVI above which emergent/floating veg. is present
-    "ndvi_veg_low":     0.05,   # NDVI lower bound for submerged vegetation signal
-    "ndti_turbid":      0.0,    # NDTI above which water is turbid/sediment-laden
+    "mndwi_water": 0.0,  # MNDWI above which pixel is open-water-dominated
+    "mndwi_moist": -0.2,  # MNDWI lower bound for moist-soil zone
+    "ndvi_veg_high": 0.2,  # NDVI above which emergent/floating veg. is present
+    "ndvi_veg_low": 0.05,  # NDVI lower bound for submerged vegetation signal
+    "ndti_turbid": 0.0,  # NDTI above which water is turbid/sediment-laden
 }
 
 
 # ---------------------------------------------------------------------------
 # EMA lookup table  (5 × 5 × 5 : mndwi_level × ndvi_level × ndti_level)
 # ---------------------------------------------------------------------------
+
 
 def build_ema_lookup_table(n_parts: int = 4) -> np.ndarray:
     """Build the (n_parts+1)³ lookup table mapping index levels → WCT class.
@@ -162,37 +164,37 @@ def build_ema_lookup_table(n_parts: int = 4) -> np.ndarray:
     # WCT 5 — Moist / Waterlogged Soil
     # Low positive MNDWI (w==1), low NDVI (v<=1), low-moderate NDTI (t<=2)
     for w in [1]:
-        for v in range(0, 2):          # 0, 1
-            for t in range(0, 3):      # 0, 1, 2
+        for v in range(0, 2):  # 0, 1
+            for t in range(0, 3):  # 0, 1, 2
                 table[w, v, t] = 5
 
     # WCT 3 — Submerged Aquatic Vegetation
     # Moderate-high MNDWI (w>=2), moderate NDVI (v 1–2), clear water (t<=1)
-    for w in range(2, n + 1):          # 2, 3, 4
-        for v in range(1, 3):          # 1, 2
-            for t in range(0, 2):      # 0, 1
+    for w in range(2, n + 1):  # 2, 3, 4
+        for v in range(1, 3):  # 1, 2
+            for t in range(0, 2):  # 0, 1
                 table[w, v, t] = 3
 
     # WCT 2 — Turbid / Sediment-laden Water
     # Moderate-high MNDWI (w>=2), low NDVI (v<=1), elevated NDTI (t>=2)
-    for w in range(2, n + 1):          # 2, 3, 4
-        for v in range(0, 2):          # 0, 1
+    for w in range(2, n + 1):  # 2, 3, 4
+        for v in range(0, 2):  # 0, 1
             for t in range(2, n + 1):  # 2, 3, 4
                 table[w, v, t] = 2
 
     # WCT 4 — Emergent / Floating Vegetation
     # ANY MNDWI including w==0 (veg masks water signal), high NDVI (v>=3), clear (t<=1)
-    for w in range(0, n + 1):          # 0, 1, 2, 3, 4
-        for v in range(3, n + 1):      # 3, 4
-            for t in range(0, 2):      # 0, 1
+    for w in range(0, n + 1):  # 0, 1, 2, 3, 4
+        for v in range(3, n + 1):  # 3, 4
+            for t in range(0, 2):  # 0, 1
                 table[w, v, t] = 4
 
     # WCT 1 — Open Clear Water  (highest certainty: set last so it always wins
     # over WCT 3/5 at the boundary levels that both rules touch)
     # High MNDWI (w>=3), very low NDVI (v<=1), very low NDTI (t<=1)
-    for w in range(3, n + 1):          # 3, 4
-        for v in range(0, 2):          # 0, 1
-            for t in range(0, 2):      # 0, 1
+    for w in range(3, n + 1):  # 3, 4
+        for v in range(0, 2):  # 0, 1
+            for t in range(0, 2):  # 0, 1
                 table[w, v, t] = 1
 
     return table
@@ -205,6 +207,7 @@ _EMA_LOOKUP_4: np.ndarray = build_ema_lookup_table(n_parts=4)
 # ---------------------------------------------------------------------------
 # Original EMA method — combination-code lookup
 # ---------------------------------------------------------------------------
+
 
 def classify_wct_ema(
     indices: xr.Dataset,
@@ -279,22 +282,22 @@ def classify_wct_ema(
         raise ValueError(f"n_parts must be an integer >= 2, got {n_parts!r}")
 
     mndwi = indices["MNDWI"]
-    ndvi  = indices["NDVI"]
-    ndti  = indices["NDTI"]
+    ndvi = indices["NDVI"]
+    ndti = indices["NDTI"]
 
-    step = 1.0 / n_parts   # 0.25 for n_parts=4
+    step = 1.0 / n_parts  # 0.25 for n_parts=4
 
     def _discretize(da: xr.DataArray) -> np.ndarray:
         """Return numpy int8 array of levels 0..n_parts for each pixel."""
         vals = da.values.astype(float)
-        lvl  = np.zeros(vals.shape, dtype=np.int8)   # 0 = negative
+        lvl = np.zeros(vals.shape, dtype=np.int8)  # 0 = negative
         for k in range(1, n_parts + 1):
             lo = (k - 1) * step
             hi = k * step if k < n_parts else 1.0 + 1e-9
             lvl = np.where((vals >= lo) & (vals < hi), np.int8(k), lvl)
         return lvl
 
-    ml = _discretize(mndwi)   # shape (ny, nx)
+    ml = _discretize(mndwi)  # shape (ny, nx)
     vl = _discretize(ndvi)
     tl = _discretize(ndti)
 
@@ -305,19 +308,17 @@ def classify_wct_ema(
         table = build_ema_lookup_table(n_parts=n_parts)
 
     # Vectorised lookup: table[ml[i,j], vl[i,j], tl[i,j]] for every pixel
-    wct_vals = table[ml, vl, tl]   # numpy fancy indexing, shape (ny, nx)
+    wct_vals = table[ml, vl, tl]  # numpy fancy indexing, shape (ny, nx)
 
     # Combination code: encodes the three index levels at every pixel.
     # Digits: hundreds = MNDWI level, tens = NDVI level, units = NDTI level.
     # E.g. 401 → MNDWI High(4), NDVI Negative(0), NDTI Low(1) → WCT 1.
     combo_vals = (
-        ml.astype(np.int16) * 100
-        + vl.astype(np.int16) * 10
-        + tl.astype(np.int16)
+        ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16)
     )
 
     # Wrap both arrays as DataArrays preserving spatial coordinates
-    wct = xr.DataArray(wct_vals,   dims=mndwi.dims, coords=mndwi.coords)
+    wct = xr.DataArray(wct_vals, dims=mndwi.dims, coords=mndwi.coords)
     combo = xr.DataArray(combo_vals, dims=mndwi.dims, coords=mndwi.coords)
 
     combo.name = "combination_code"
@@ -336,7 +337,8 @@ def classify_wct_ema(
     )
 
     wct = _finalise(
-        wct, indices,
+        wct,
+        indices,
         method="EMA-combination-lookup",
         extra_attrs={
             "n_parts": n_parts,
@@ -348,9 +350,7 @@ def classify_wct_ema(
     return xr.Dataset(
         {"wetland_cover_type": wct, "combination_code": combo},
         attrs={
-            "title": (
-                "Wetland Cover Type - EMA combination-lookup classification"
-            ),
+            "title": ("Wetland Cover Type - EMA combination-lookup classification"),
             "references": (
                 "Singh et al. (2022). Environmental Monitoring and "
                 "Assessment, 194(12), 878. "
@@ -363,6 +363,7 @@ def classify_wct_ema(
 # ---------------------------------------------------------------------------
 # Improved continuous-threshold method
 # ---------------------------------------------------------------------------
+
 
 def classify_wct(
     indices: xr.Dataset,
@@ -416,42 +417,50 @@ def classify_wct(
         thr.update(thresholds)
 
     mndwi = indices["MNDWI"]
-    ndvi  = indices["NDVI"]
-    ndti  = indices["NDTI"]
+    ndvi = indices["NDVI"]
+    ndti = indices["NDTI"]
 
-    is_water     = mndwi > thr["mndwi_water"]
-    is_moist     = (mndwi > thr["mndwi_moist"]) & ~is_water
-    is_turbid    = ndti  > thr["ndti_turbid"]
-    has_high_veg = ndvi  > thr["ndvi_veg_high"]
-    has_low_veg  = ndvi  > thr["ndvi_veg_low"]
+    is_water = mndwi > thr["mndwi_water"]
+    is_moist = (mndwi > thr["mndwi_moist"]) & ~is_water
+    is_turbid = ndti > thr["ndti_turbid"]
+    has_high_veg = ndvi > thr["ndvi_veg_high"]
+    has_low_veg = ndvi > thr["ndvi_veg_low"]
 
     wct = xr.zeros_like(mndwi, dtype=np.int8)
 
     # Assign in priority order — WCT 1 (most diagnostic) last so it wins
-    wct = xr.where(is_moist & ~has_low_veg, np.int8(5), wct)        # Moist soil
-    wct = xr.where(                                                  # Submerged veg
-        is_water & has_low_veg & ~has_high_veg, np.int8(3), wct,
+    wct = xr.where(is_moist & ~has_low_veg, np.int8(5), wct)  # Moist soil
+    wct = xr.where(  # Submerged veg
+        is_water & has_low_veg & ~has_high_veg,
+        np.int8(3),
+        wct,
     )
-    wct = xr.where(                                                  # Turbid water
-        is_water & is_turbid & ~has_low_veg, np.int8(2), wct,
+    wct = xr.where(  # Turbid water
+        is_water & is_turbid & ~has_low_veg,
+        np.int8(2),
+        wct,
     )
     # WCT 4: any MNDWI (including negative) when NDVI is high — mirrors EMA
-    wct = xr.where(has_high_veg & ~is_turbid, np.int8(4), wct)      # Emergent veg
-    wct = xr.where(                                                  # Clear water
-        is_water & ~is_turbid & ~has_low_veg, np.int8(1), wct,
+    wct = xr.where(has_high_veg & ~is_turbid, np.int8(4), wct)  # Emergent veg
+    wct = xr.where(  # Clear water
+        is_water & ~is_turbid & ~has_low_veg,
+        np.int8(1),
+        wct,
     )
 
-    return _finalise(wct, indices, method="threshold",
-                     extra_attrs={"thresholds": str(thr)})
+    return _finalise(
+        wct, indices, method="threshold", extra_attrs={"thresholds": str(thr)}
+    )
 
 
 # ---------------------------------------------------------------------------
 # Shared private helpers
 # ---------------------------------------------------------------------------
 
+
 def _validate_input(indices: xr.Dataset) -> None:
     required = {"MNDWI", "NDVI", "NDTI"}
-    missing  = required - set(indices.data_vars)
+    missing = required - set(indices.data_vars)
     if missing:
         raise KeyError(
             f"Missing required variables: {missing}. "
