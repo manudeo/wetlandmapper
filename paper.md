@@ -58,9 +58,9 @@ GeoJSON area-of-interest inputs.
 
 # Statement of Need
 
-Wetlands cover roughly 5–8percent of Earth's land surface and deliver ecosystem services
+Wetlands cover roughly 5–8% of Earth's land surface and deliver ecosystem services
 valued at tens of trillions of dollars annually, yet global wetland area has declined
-by approximately 35percent since 1970 [@davidson2014extent; @ramsar2018global]. Operational
+by approximately 35% since 1970 [@davidson2014extent; @ramsar2018global]. Operational
 monitoring at basin to continental scales — tracking both inundation dynamics and
 biophysical surface conditions — is essential for conservation management, restoration
 prioritisation, and international reporting obligations under the Ramsar Convention.
@@ -197,7 +197,7 @@ missions for any requested date range with harmonised band names, enabling long-
 analyses from 1982 to the present day. `"MODISAll"` provides similar functionality for
 MODIS Terra and Aqua missions. An optional `use_slc_off` parameter controls
 whether Landsat 7 images acquired after the 2003 Scan Line Corrector failure (which
-cause ~22 percent data gaps per scene) are included. Areas of interest may be provided as a
+cause ~22% data gaps per scene) are included. Areas of interest may be provided as a
 GeoJSON dict, a shapefile path, or a GeoJSON file path; multi-feature shapefiles are
 dissolved to a single boundary automatically.
 
