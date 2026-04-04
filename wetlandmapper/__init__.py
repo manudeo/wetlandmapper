@@ -35,7 +35,22 @@ from .dynamics import (
     classify_dynamics,
     compute_wet_frequency,
 )
-from .indices import compute_indices, compute_mndwi, compute_ndti, compute_ndvi
+from .indices import (
+    compute_indices,
+    compute_mndwi,
+    compute_ndwi,
+    compute_ndti,
+    compute_ndvi,
+    compute_aweish,
+    compute_aweinsh,
+    compute_water_indices,
+)
+from .terrain import (
+    compute_slope,
+    compute_tpi,
+    compute_local_range,
+    mask_terrain_artifacts,
+)
 from .wct import (
     WCT_CLASSES,
     WCT_COLORS,
@@ -48,15 +63,24 @@ from .wct import (
 __all__ = [
     # Index computation
     "compute_mndwi",
+    "compute_ndwi",
     "compute_ndvi",
     "compute_ndti",
+    "compute_aweish",
+    "compute_aweinsh",
     "compute_indices",
+    "compute_water_indices",
     # Dynamics classification
     "classify_dynamics",
     "DYNAMICS_CLASSES",
     "DYNAMICS_COLORS",
     "compute_wet_frequency",
     "aggregate_time",
+    # Terrain masking
+    "compute_slope",
+    "compute_tpi",
+    "compute_local_range",
+    "mask_terrain_artifacts",
     # WCT classification
     "classify_wct_ema",
     "classify_wct",

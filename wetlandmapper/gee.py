@@ -6,8 +6,8 @@ gee.py
 ------
 Optional Google Earth Engine (GEE) data acquisition module.
 
-Supports **all Landsat missions** (4, 5, 7, 8, 9) and Sentinel-2, including a
-``"LandsatAll"`` option that automatically merges available missions for any
+Supports **all Landsat missions** (4, 5, 7, 8, 9), Sentinel-2, and **MODIS** (Terra/Aqua),
+including a ``"LandsatAll"`` option that automatically merges available missions for any
 requested date range.
 
 Two retrieval functions
@@ -30,7 +30,7 @@ Both functions accept a ``temporal_aggregation`` parameter:
     ``"monthly"``  — one median composite per calendar month
     ``"seasonal"`` — one composite per meteorological season (DJF/MAM/JJA/SON)
 
-Landsat missions and date coverage
+Sensors and date coverage
 ------------------------------------
 +-------------+---------------------+---------------------------+--------------------+
 | sensor=     | GEE collection      | Operational dates         | Band family        |
@@ -43,6 +43,8 @@ Landsat missions and date coverage
 | "Landsat9"  | LC09/C02/T1_L2      | 2021-10-31 – present       | OLI-2 (SR_B2–B7)   |
 | "LandsatAll"| merged above        | 1982 – present             | auto-harmonised    |
 | "Sentinel2" | S2_SR_HARMONIZED    | 2015-06-27 – present       | MSI (B2–B12)       |
+| "MODIS_Terra"| MOD09A1             | 2000-02-24 – present       | MODIS (500m)       |
+| "MODIS_Aqua" | MYD09A1             | 2002-07-04 – present       | MODIS (500m)       |
 +-------------+---------------------+---------------------------+--------------------+
 
 ``"Landsat"`` is an alias for ``"Landsat8"`` for backward compatibility.
@@ -55,6 +57,28 @@ Images acquired after this date have wedge-shaped data gaps covering roughly
 images and use only the good-quality 1999–2003 record.  Set ``use_slc_off=True``
 to include post-failure images (useful when other sensors have no coverage, e.g.
 1999–2012 before Landsat 8).
+
+MODIS note
+----------
+MODIS provides 500m resolution surface reflectance composites (8-day intervals).
+Use ``"MODISAll"`` to automatically merge Terra and Aqua for continuous coverage.
+MODIS has coarser resolution but longer temporal record (2000–present) compared
+to Landsat. Suitable for regional-scale studies where 500m resolution is adequate.
+Band mapping differs from Landsat — MODIS stores Red as Band 1, NIR as Band 2,
+Blue as Band 3, Green as Band 4. Cloud masking uses StateQA bits 0-1 (cloud state)
+and bit 2 (shadow). Scale factor is 0.0001 with no offset (unlike Landsat C02 L2's
+-0.2 offset). AWEIsh and AWEInsh are computed server-side for MODIS since all
+required bands are available.
+
+DEM masking
+-----------
+Server-side DEM masking using Copernicus GLO-30 can be activated with the
+``dem_mask`` parameter in :func:`fetch`. This applies terrain filters directly
+in GEE using ``ee.Terrain.slope()`` and ``reduceNeighborhood``, avoiding the
+need to download the DEM. The snow question is addressed by ``min_temp_c`` in
+climate-adaptive mode (ERA5 precipitation includes snowfall; filtering to months
+≥5°C removes cold months where precipitation is frozen) and by ``max_elevation_m``
+(above the local glaciation line, always mask regardless of other criteria).
 
 Requirements
 ------------
@@ -125,6 +149,17 @@ _BAND_MAP: dict[str, dict[str, str]] = {
         "swir2": "B12",
         "qa":    "QA60",
     },
+    # MODIS Terra/Aqua MOD09A1 / MYD09A1 (8-day 500m surface reflectance)
+    # Scale: multiply by 0.0001 (stored as int16, range -100 to 16000)
+    "MODIS_500m": {
+        "blue":  "sur_refl_b03",
+        "green": "sur_refl_b04",
+        "red":   "sur_refl_b01",
+        "nir":   "sur_refl_b02",
+        "swir":  "sur_refl_b06",
+        "swir2": "sur_refl_b07",
+        "qa":    "StateQA",
+    },
     # Common renamed bands used internally after harmonising LandsatAll
     "_harmonised": {
         "blue":  "blue",
@@ -144,6 +179,8 @@ _COLLECTION_ID: dict[str, str] = {
     "Landsat8":  "LANDSAT/LC08/C02/T1_L2",
     "Landsat9":  "LANDSAT/LC09/C02/T1_L2",
     "Sentinel2": "COPERNICUS/S2_SR_HARMONIZED",
+    "MODIS_Terra": "MODIS/061/MOD09A1",
+    "MODIS_Aqua":  "MODIS/061/MYD09A1",
 }
 
 # Map user-facing sensor name → internal band-family key
@@ -154,7 +191,9 @@ _SENSOR_BAND_FAMILY: dict[str, str] = {
     "Landsat8":  "LandsatOLI",
     "Landsat9":  "LandsatOLI",
     "Sentinel2": "Sentinel2",
-    # LandsatAll handled separately
+    "MODIS_Terra": "MODIS_500m",
+    "MODIS_Aqua":  "MODIS_500m",
+    # LandsatAll and MODISAll handled separately
 }
 
 # Backward-compat alias
@@ -162,11 +201,12 @@ _SENSOR_ALIASES: dict[str, str] = {
     "Landsat": "Landsat8",
 }
 
-# Scale factors: all Landsat C02 L2 use the same formula; S2 divides by 10000
+# Scale factors: all Landsat C02 L2 use the same formula; S2/MODIS divide by 10000
 _SCALE_FACTOR: dict[str, dict[str, float]] = {
     "LandsatTM_ETM": {"scale": 0.0000275, "offset": -0.2},
     "LandsatOLI":    {"scale": 0.0000275, "offset": -0.2},
     "Sentinel2":     {"scale": 0.0001,    "offset":  0.0},
+    "MODIS_500m":    {"scale": 0.0001,    "offset":  0.0},
 }
 
 # Cloud-cover image property per sensor family
@@ -174,6 +214,7 @@ _CLOUD_COVER_PROP: dict[str, str] = {
     "LandsatTM_ETM": "CLOUD_COVER",
     "LandsatOLI":    "CLOUD_COVER",
     "Sentinel2":     "CLOUDY_PIXEL_PERCENTAGE",
+    "MODIS_500m":    "CLOUD_COVER",   # not used — MODIS uses pixel-level QA
 }
 
 # Approximate operational date ranges for LandsatAll auto-selection
@@ -198,7 +239,7 @@ _SEASONS: dict[str, tuple[list[int], int, int]] = {
 
 _VALID_AGGREGATIONS = {"all", "annual", "monthly", "seasonal"}
 _VALID_SINGLE_SENSORS = set(_COLLECTION_ID.keys()) | set(_SENSOR_ALIASES.keys())
-_ALL_VALID_SENSORS = _VALID_SINGLE_SENSORS | {"LandsatAll"}
+_ALL_VALID_SENSORS = _VALID_SINGLE_SENSORS | {"LandsatAll", "MODISAll"}
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +289,22 @@ def _mask_sentinel2_clouds(image: "ee.Image") -> "ee.Image":
         .And(qa.bitwiseAnd(1 << 11).eq(0))
     )
     return image.updateMask(mask).divide(10000)
+
+
+def _mask_modis_clouds(image: "ee.Image") -> "ee.Image":
+    """Mask clouds and cloud shadows using MODIS StateQA bits.
+
+    StateQA bit layout (MOD09A1 / MYD09A1):
+        Bits 0-1: cloud state  (00 = clear, 01 = cloudy, 10 = mixed)
+        Bit 2:    cloud shadow (1 = shadow present)
+
+    Only pixels where bits 0-1 == 0 (clear) AND bit 2 == 0 (no shadow)
+    are retained.
+    """
+    qa = image.select("StateQA")
+    cloud_state  = qa.bitwiseAnd(3).eq(0)      # bits 0-1: clear only
+    cloud_shadow = qa.bitwiseAnd(1 << 2).eq(0) # bit 2: no shadow
+    return image.updateMask(cloud_state.And(cloud_shadow))
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +442,57 @@ def _build_landsat_all(
     merged = merged.map(lambda img: _add_indices(img, harm_bands))
 
     return merged
+
+
+def _build_modis_all(
+    ee_geom: "ee.Geometry",
+    start: str,
+    end: str,
+    max_cloud_cover: float,
+) -> "ee.ImageCollection":
+    """Merge MODIS Terra (MOD09A1) and Aqua (MYD09A1) into one collection.
+
+    Both collections use the same MODIS_500m band family.  Terra has an
+    equatorial crossing time of ~10:30 AM and Aqua ~1:30 PM, giving
+    approximately twice the sampling frequency when combined.  Both are
+    8-day composites so the merged collection has ~16-day sampling.
+
+    Parameters
+    ----------
+    ee_geom : ee.Geometry
+    start, end : str
+        ISO 8601 date strings.
+    max_cloud_cover : float
+        Not used for per-image filtering (MODIS uses pixel-level QA only);
+        kept for API consistency.
+
+    Returns
+    -------
+    ee.ImageCollection
+        Merged Terra + Aqua collection with MNDWI / NDVI / NDTI bands.
+    """
+    bm = _BAND_MAP["MODIS_500m"]
+    sf = _SCALE_FACTOR["MODIS_500m"]
+
+    def _prep(collection_id):
+        col = (
+            ee.ImageCollection(collection_id)
+            .filterBounds(ee_geom)
+            .filterDate(start, end)
+        )
+        col = col.map(_mask_modis_clouds)
+        col = col.map(
+            lambda img: (
+                img.multiply(sf["scale"])
+                   .copyProperties(img, ["system:time_start"])
+            )
+        )
+        col = col.map(lambda img: _add_indices(img, bm))
+        return col
+
+    terra = _prep("MODIS/061/MOD09A1")
+    aqua  = _prep("MODIS/061/MYD09A1")
+    return terra.merge(aqua)
 
 
 # ---------------------------------------------------------------------------
@@ -636,14 +744,28 @@ def _build_single_sensor_collection(
                 UserWarning, stacklevel=4
             )
 
-    collection = (
-        ee.ImageCollection(_COLLECTION_ID[sensor])
-        .filterBounds(ee_geom)
-        .filterDate(start, effective_end)
-        .filter(ee.Filter.lt(cloud_prop, max_cloud_cover))
-    )
+    collection = ee.ImageCollection(_COLLECTION_ID[sensor])
+    collection = collection.filterBounds(ee_geom).filterDate(start, effective_end)
+    if sensor not in ("MODIS_Terra", "MODIS_Aqua"):
+        collection = collection.filter(ee.Filter.lt(cloud_prop, max_cloud_cover))
 
-    if sensor != "Sentinel2":
+    if sensor == "Sentinel2":
+        collection = collection.map(_mask_sentinel2_clouds)
+        collection = collection.map(
+            lambda img: (
+                img.multiply(sf["scale"])
+                   .copyProperties(img, ["system:time_start"])
+            )
+        )
+    elif sensor in ("MODIS_Terra", "MODIS_Aqua"):
+        collection = collection.map(_mask_modis_clouds)
+        collection = collection.map(
+            lambda img: (
+                img.multiply(sf["scale"])
+                   .copyProperties(img, ["system:time_start"])
+            )
+        )
+    else:
         collection = collection.map(_mask_landsat_clouds)
         collection = collection.map(
             lambda img: (
@@ -652,8 +774,6 @@ def _build_single_sensor_collection(
                    .copyProperties(img, ["system:time_start"])
             )
         )
-    else:
-        collection = collection.map(_mask_sentinel2_clouds)
 
     collection = collection.map(lambda img: _add_indices(img, bm))
     return collection, bm
@@ -741,6 +861,7 @@ def fetch(
     max_cloud_cover: float = 20.0,
     temporal_aggregation: str = "all",
     use_slc_off: bool = False,
+    dem_mask: dict | None = None,
     project: str | None = None,
 ) -> "xr.DataArray | xr.Dataset":
     """Retrieve spectral indices from GEE as an xarray object (immediate download).
@@ -766,7 +887,8 @@ def fetch(
     sensor : str
         Satellite sensor.  One of:
         ``"Landsat4"``, ``"Landsat5"``, ``"Landsat7"``, ``"Landsat8"``
-        (default), ``"Landsat9"``, ``"LandsatAll"``, ``"Sentinel2"``.
+        (default), ``"Landsat9"``, ``"LandsatAll"``, ``"Sentinel2"``,
+        ``"MODIS_Terra"``, ``"MODIS_Aqua"``, ``"MODISAll"``.
         ``"Landsat"`` is an alias for ``"Landsat8"``.
     index : str or list of str
         One or more of ``"MNDWI"``, ``"NDVI"``, ``"NDTI"``.
@@ -782,6 +904,18 @@ def fetch(
         Include Landsat 7 SLC-off images (acquired after 2003-05-31)?
         Default ``False``.  Only relevant when ``sensor`` is ``"Landsat7"``
         or ``"LandsatAll"``.
+    dem_mask : dict or None
+        Server-side DEM masking using Copernicus GLO-30. Applied via
+        ``ee.Terrain.slope()`` and ``reduceNeighborhood`` to avoid downloading
+        the DEM. Dict with keys:
+
+        - ``"max_slope"`` (float): Maximum slope in degrees (default 5.0)
+        - ``"max_elevation_m"`` (float): Absolute elevation ceiling in metres
+        - ``"min_temp_c"`` (float): Minimum temperature (°C) for climate-adaptive
+          masking (removes cold months where precipitation is frozen)
+        - ``"window_size"`` (int): Window size for terrain analysis (default 5)
+
+        Set to ``None`` (default) to disable DEM masking.
     project : str, optional
         GEE cloud project ID.
 
@@ -812,6 +946,13 @@ def fetch(
     >>> indices = fetch(aoi, "2005-10-01", "2005-12-31",
     ...                 sensor="Landsat5",
     ...                 index=["MNDWI", "NDVI", "NDTI"])
+
+    Annual MNDWI from MODIS for regional-scale analysis:
+
+    >>> mndwi_modis = fetch(aoi, "2000-01-01", "2023-12-31",
+    ...                     sensor="MODISAll",
+    ...                     temporal_aggregation="annual",
+    ...                     scale=500)
     """
     _require_ee()
 
@@ -840,6 +981,8 @@ def fetch(
         collection = _build_landsat_all(
             ee_geom, start, end, max_cloud_cover, use_slc_off
         )
+    elif sensor == "MODISAll":
+        collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
     else:
         collection, _ = _build_single_sensor_collection(
             sensor, ee_geom, start, end, max_cloud_cover, use_slc_off
@@ -936,6 +1079,7 @@ def fetch_xee(
     max_cloud_cover: float = 20.0,
     temporal_aggregation: str = "all",
     use_slc_off: bool = False,
+    dem_mask: dict | None = None,
     project: str | None = None,
     chunks: dict | None = None,
 ) -> "xr.DataArray | xr.Dataset":
@@ -968,6 +1112,9 @@ def fetch_xee(
         recommended to limit the number of lazy time steps.
     use_slc_off : bool
         Include Landsat 7 SLC-off images?  Default ``False``.
+    dem_mask : dict or None
+        Server-side DEM masking using Copernicus GLO-30. See :func:`fetch`
+        for parameter details. Default ``None`` (disabled).
     project : str, optional
         GEE cloud project ID.
     chunks : dict, optional
@@ -1060,6 +1207,8 @@ def fetch_xee(
         collection = _build_landsat_all(
             ee_geom, start, end, max_cloud_cover, use_slc_off
         )
+    elif sensor == "MODISAll":
+        collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
     else:
         collection, _ = _build_single_sensor_collection(
             sensor, ee_geom, start, end, max_cloud_cover, use_slc_off

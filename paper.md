@@ -25,7 +25,8 @@ bibliography: paper.bib
 
 `WetlandMapper` is an open-source Python package that operationalises two peer-reviewed
 remote-sensing frameworks for automated wetland analysis from multispectral satellite
-data. The package is available on PyPI (`pip install wetlandmapper`) and archived at
+data, now expanded with comprehensive spectral index computation, terrain analysis,
+and enhanced visualisation capabilities. The package is available on PyPI (`pip install wetlandmapper`) and archived at
 Zenodo [@wetlandmapper_zenodo].
 
 The first framework is a **wetland dynamics classification** method [@singh2022basin]
@@ -34,20 +35,25 @@ and classifies each wetland pixel into one of six temporal dynamics classes:
 *Persistent*, *New*, *Intensifying*, *Diminishing*, *Lost*, and *Intermittent*.
 
 The second framework is a **Wetland Cover Type (WCT) classification** method
-[@singh2022deriving] that combines the Modified Normalised Difference Water Index
-(MNDWI), Normalised Difference Vegetation Index (NDVI), and Normalised Difference
-Turbidity Index (NDTI) to characterise the biophysical surface composition of wetland
-pixels into stable, ecologically interpretable cover types including open clear water,
-turbid water, aquatic vegetation, and moist soil.
+[@singh2022deriving] that combines multiple spectral indices to characterise the
+biophysical surface composition of wetland pixels into stable, ecologically interpretable
+cover types including open clear water, turbid water, aquatic vegetation, and moist soil.
 
-These two modules address complementary monitoring questions: the dynamics module
-characterises *when and how* wetland inundation is changing over time, while the WCT
-module characterises *what* is present at the wetland surface at any given time. Both
-operate on `xarray` `DataArray` objects [@hoyer2017xarray], enabling dask-backed
+The package now includes comprehensive **spectral index computation** supporting seven
+indices (MNDWI, NDWI, NDVI, NDTI, AWEIsh, AWEInsh) for flexible water detection and
+vegetation analysis, a **terrain analysis module** for topographic corrections and
+artifact masking, and **visualisation utilities** for interactive plotting of results.
+
+These modules address complementary monitoring questions: the dynamics module
+characterises *when and how* wetland inundation is changing over time, the WCT
+module characterises *what* is present at the wetland surface at any given time,
+the spectral indices provide flexible water and vegetation detection, and the terrain
+module enables topographic corrections for improved accuracy in hilly terrain.
+All operate on `xarray` `DataArray` objects [@hoyer2017xarray], enabling dask-backed
 parallel processing of large raster archives. Users may supply their own pre-processed
 imagery or retrieve analysis-ready surface-reflectance data directly from Google Earth
 Engine (GEE; @gorelick2017google) via an integrated optional acquisition submodule that
-supports all Landsat missions (4, 5, 7, 8, and 9), Sentinel-2, and shapefile-path or
+supports all Landsat missions (4, 5, 7, 8, and 9), Sentinel-2, MODIS, and shapefile-path or
 GeoJSON area-of-interest inputs.
 
 # Statement of Need
@@ -65,28 +71,37 @@ not resolve temporal dynamics or surface cover composition [@pekel2016high]; (2)
 are embedded in proprietary platforms (ArcGIS Model Builder, GEE JavaScript API)
 that resist integration into scripted, reproducible workflows; (3) they address either
 dynamics or cover characterisation but not both within a single interoperable framework;
-and (4) their methods are distributed as single-use scripts rather than tested,
-documented software libraries with version histories.
+(4) their methods are distributed as single-use scripts rather than tested,
+documented software libraries with version histories; (5) they lack comprehensive spectral
+index libraries for flexible water and vegetation detection; and (6) they do not account
+for topographic effects that can confound wetland classification in hilly terrain.
 
-`WetlandMapper` addresses all four gaps. It provides a fully Pythonic, open-source
+`WetlandMapper` addresses all six gaps. It provides a fully Pythonic, open-source
 library that unifies the dynamics-classification method of @singh2021hydrogeomorphic and @singh2022basin — previously
 dependent on ArcGIS — and the WCT method of @singh2022deriving
 — previously distributed only as GEE JavaScript code and an ArcGIS toolbox — while
-adding a flexible data-ingestion pathway that supports both user-supplied imagery and
-automated GEE retrieval. Both methods require no labelled training data and operate on
-any multispectral archive from which MNDWI, NDVI, and NDTI can be computed.
+adding comprehensive spectral index computation, terrain analysis for topographic
+corrections, visualisation utilities, and a flexible data-ingestion pathway that supports
+both user-supplied imagery and automated GEE retrieval. Both core methods require no
+labelled training data and operate on any multispectral archive from which the required
+indices can be computed.
 
 # State of the Field
 
 The JRC Global Surface Water dataset [@pekel2016high] characterises long-term open-water
-occurrence globally at 30 m resolution but does not distinguish wetland surface types. Machine-learning approaches achieve high
-classification accuracy but require labelled training data that are rarely available at
-regional scales [@mahdavi2018remote; @slagter2020mapping]. SAR-based methods handle
-cloud cover but require specialist pre-processing workflows [@tsyganskaya2018sar] and site-specific thresholding. The
-methods unified in `WetlandMapper` occupy a practical middle ground — no training labels,
+occurrence globally at 30 m resolution but does not distinguish wetland surface types.
+Machine-learning approaches achieve high classification accuracy but require labelled
+training data that are rarely available at regional scales [@mahdavi2018remote; @slagter2020mapping].
+SAR-based methods handle cloud cover but require specialist pre-processing workflows
+[@tsyganskaya2018sar] and site-specific thresholding. Most tools lack comprehensive
+spectral index libraries or terrain correction capabilities needed for robust wetland
+analysis across diverse landscapes.
+
+The methods unified in `WetlandMapper` occupy a practical middle ground — no training labels,
 applicable to any cloud-free multispectral archive, and producing ecologically
-interpretable outputs — and `WetlandMapper` makes them accessible in a reusable,
-tested Python library for the first time.
+interpretable outputs — while providing comprehensive spectral index computation,
+terrain analysis for topographic corrections, and visualisation utilities. `WetlandMapper`
+makes these capabilities accessible in a reusable, tested Python library for the first time.
 
 # Software Design and Methods
 
@@ -146,12 +161,43 @@ classification implementations are provided: the original quartile-based combina
 code method (`classify_wct_ema`), and an improved continuous-threshold variant
 (`classify_wct`) that allows sub-quartile calibration for different sensors or seasons.
 
+## Spectral Index Computation
+
+The package provides comprehensive spectral index computation supporting seven indices
+for flexible water detection and vegetation analysis:
+
+- **MNDWI**: Modified Normalised Difference Water Index [@xu2006modification]
+- **NDWI**: Normalised Difference Water Index [@mcfeeters1996use]
+- **NDVI**: Normalised Difference Vegetation Index
+- **NDTI**: Normalised Difference Turbidity Index
+- **AWEIsh**: Automated Water Extraction Index with shadow suppression [@feyisa2014automated]
+- **AWEInsh**: Automated Water Extraction Index without shadow suppression [@feyisa2014automated]
+
+Users can compute individual indices or use `compute_indices()` for the core WCT indices
+(MNDWI, NDVI, NDTI) or `compute_water_indices()` for comprehensive water detection
+across all available water indices.
+
+## Terrain Analysis
+
+The terrain analysis module provides topographic corrections essential for accurate
+wetland classification in hilly or mountainous terrain where slope and topographic
+position can confound spectral signatures. Functions include:
+
+- **Slope computation**: Local slope calculation from digital elevation models
+- **Topographic Position Index (TPI)**: Relative topographic position within a local neighborhood
+- **Local range**: Local elevation variability for terrain complexity assessment
+- **Terrain artifact masking**: Automated masking of steep slopes that may cause
+  classification errors in wetland detection
+
+## Data Acquisition and Temporal Aggregation
+
 ## Data Acquisition and Temporal Aggregation
 
 The optional `wetlandmapper.gee` submodule supports all five Landsat missions (4, 5,
-7, 8, 9) and Sentinel-2. A `"LandsatAll"` option automatically merges available
+7, 8, 9), Sentinel-2, and MODIS. A `"LandsatAll"` option automatically merges available
 missions for any requested date range with harmonised band names, enabling long-record
-analyses from 1982 to the present day. An optional `use_slc_off` parameter controls
+analyses from 1982 to the present day. `"MODISAll"` provides similar functionality for
+MODIS Terra and Aqua missions. An optional `use_slc_off` parameter controls
 whether Landsat 7 images acquired after the 2003 Scan Line Corrector failure (which
 cause ~22percent data gaps per scene) are included. Areas of interest may be provided as a
 GeoJSON dict, a shapefile path, or a GeoJSON file path; multi-feature shapefiles are
@@ -168,12 +214,14 @@ operates on any `xarray` `DataArray` or `Dataset` regardless of data source.
 `WetlandMapper` requires Python $\geq$ 3.9. Core dependencies are `numpy`
 [@harris2020array], `xarray` [@hoyer2017xarray], and `rioxarray` [@snow2022rioxarray].
 The GEE submodule additionally requires `earthengine-api`, `rasterio`, `xee`, `dask`,
-and `geopandas`. Installation:
+and `geopandas`. The plotting submodule requires `matplotlib` [@hunter2007matplotlib].
+Installation:
 
 ```
 pip install wetlandmapper                # core
 pip install "wetlandmapper[gee]"         # with GEE + shapefile support
 pip install "wetlandmapper[plot]"        # with visualisation utilities
+pip install "wetlandmapper[all]"         # complete installation
 ```
 
 Detailed platform-specific installation instructions, including GEE authentication
@@ -187,6 +235,8 @@ A minimal end-to-end example for each workflow:
 import xarray as xr
 from wetlandmapper import compute_mndwi, classify_dynamics
 from wetlandmapper import compute_indices, classify_wct_ema
+from wetlandmapper import compute_water_indices, compute_slope
+from wetlandmapper.plotting import plot_dynamics, plot_wct
 from wetlandmapper.gee import fetch
 
 # --- Dynamics: fetch annual composites from all Landsat missions ---
@@ -197,24 +247,32 @@ dynamics = classify_dynamics(mndwi, nYear=3,
 dynamics.rio.to_raster("wetland_dynamics.tif")
 
 # --- WCT: single composite → 5 biophysical cover types
-# --- ds_composite is an xarray multispectral dataset (a Landsat .tiff) 
+# --- ds_composite is an xarray multispectral dataset (a Landsat .tiff)
 ds_composite = xr.load_dataset('Landsat.tiff')
 indices = compute_indices(ds_composite, green_band="B3", red_band="B4",
                           nir_band="B5", swir_band="B6")
 wct = classify_wct_ema(indices)
 wct.rio.to_raster("wetland_cover_types.tif")
+
+# --- Comprehensive water detection with all available indices ---
+water_indices = compute_water_indices(ds_composite,
+                                      blue_band="B2", green_band="B3",
+                                      red_band="B4", nir_band="B5",
+                                      swir_band="B6", swir2_band="B7")
+water_indices  # Contains MNDWI, NDWI, AWEIsh, AWEInsh
+
+# --- Terrain analysis for topographic corrections ---
+dem = xr.open_dataset("elevation.nc")["elevation"]
+slope = compute_slope(dem)
+# Apply terrain masking to reduce false positives in steep areas
+
+# --- Visualisation ---
+plot_dynamics(dynamics, title="Wetland Dynamics Classification")
+plot_wct(wct, title="Wetland Cover Types")
 ```
 
 A Jupyter notebook demonstrating both workflows on synthetic data, with full GEE
-acquisition and interactive visualisation sections, is included at
-`notebooks/demo_wetlandmapper.ipynb`. Full API documentation is available at
-[https://wetlandmapper.readthedocs.io](https://wetlandmapper.readthedocs.io).
-
-# Research Impact and Context
-
-The dynamics module is derived from the methodology of @singh2022basin, where it was
-applied to over 3,000 floodplain wetlands in the Ramganga Basin, north India, using a
-Landsat time series spanning 1994–2019.
+acquisition, terrain analysis, and interactive visualisation sections, is included at
 
 That study demonstrated that frequency-based temporal aggregation can effectively
 distinguish permanently inundated, seasonally active, and recently changed wetlands at

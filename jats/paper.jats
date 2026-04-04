@@ -1,0 +1,721 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.2 20190208//EN"
+                  "JATS-publishing1.dtd">
+<article xmlns:mml="http://www.w3.org/1998/Math/MathML" xmlns:xlink="http://www.w3.org/1999/xlink" dtd-version="1.2" article-type="other">
+<front>
+<journal-meta>
+<journal-id></journal-id>
+<journal-title-group>
+<journal-title>Journal of Open Source Software</journal-title>
+<abbrev-journal-title>JOSS</abbrev-journal-title>
+</journal-title-group>
+<issn publication-format="electronic">2475-9066</issn>
+<publisher>
+<publisher-name>Open Journals</publisher-name>
+</publisher>
+</journal-meta>
+<article-meta>
+<article-id pub-id-type="publisher-id">0</article-id>
+<article-id pub-id-type="doi">N/A</article-id>
+<title-group>
+<article-title>WetlandMapper: A Python package for automatic wetland
+mapping, dynamics classification, and cover-type characterisation from
+multispectral time-series data</article-title>
+</title-group>
+<contrib-group>
+<contrib contrib-type="author" corresp="yes">
+<contrib-id contrib-id-type="orcid">https://orcid.org/0000-0002-3511-8362</contrib-id>
+<name>
+<surname>Singh</surname>
+<given-names>Manudeo</given-names>
+</name>
+<xref ref-type="aff" rid="aff-1"/>
+<xref ref-type="corresp" rid="cor-1"><sup>*</sup></xref>
+</contrib>
+<aff id="aff-1">
+<institution-wrap>
+<institution>Department of Geography and Earth Sciences, Aberystwyth
+University, Aberystwyth, Wales, UK</institution>
+</institution-wrap>
+</aff>
+</contrib-group>
+<author-notes>
+<corresp id="cor-1">* E-mail: <email></email></corresp>
+</author-notes>
+<pub-date date-type="pub" publication-format="electronic" iso-8601-date="2026-03-11">
+<day>11</day>
+<month>3</month>
+<year>2026</year>
+</pub-date>
+<volume>¿VOL?</volume>
+<issue>¿ISSUE?</issue>
+<fpage>¿PAGE?</fpage>
+<permissions>
+<copyright-statement>Authors of papers retain copyright and release the
+work under a Creative Commons Attribution 4.0 International License (CC
+BY 4.0)</copyright-statement>
+<copyright-year>1970</copyright-year>
+<copyright-holder>The article authors</copyright-holder>
+<license license-type="open-access" xlink:href="https://creativecommons.org/licenses/by/4.0/">
+<license-p>Authors of papers retain copyright and release the work under
+a Creative Commons Attribution 4.0 International License (CC BY
+4.0)</license-p>
+</license>
+</permissions>
+<kwd-group kwd-group-type="author">
+<kwd>Python</kwd>
+<kwd>remote sensing</kwd>
+<kwd>wetlands</kwd>
+<kwd>wetland dynamics</kwd>
+<kwd>wetland cover types</kwd>
+<kwd>time series</kwd>
+<kwd>xarray</kwd>
+<kwd>Google Earth Engine</kwd>
+</kwd-group>
+</article-meta>
+</front>
+<body>
+<sec id="summary">
+  <title>Summary</title>
+  <p><monospace>WetlandMapper</monospace> is an open-source Python
+  package that operationalises two peer-reviewed remote-sensing
+  frameworks for automated wetland analysis from multispectral satellite
+  data. The package is available on PyPI
+  (<monospace>pip install wetlandmapper</monospace>) and archived at
+  Zenodo
+  (<xref alt="Singh, 2026" rid="ref-wetlandmapper_zenodo" ref-type="bibr">Singh,
+  2026</xref>).</p>
+  <p>The first framework is a <bold>wetland dynamics
+  classification</bold> method
+  (<xref alt="Singh &amp; Sinha, 2022a" rid="ref-singh2022basin" ref-type="bibr">Singh
+  &amp; Sinha, 2022a</xref>) that maps floodplain wetlands at basin
+  scale from a multi-temporal MNDWI time series and classifies each
+  wetland pixel into one of six temporal dynamics classes:
+  <italic>Persistent</italic>, <italic>New</italic>,
+  <italic>Intensifying</italic>, <italic>Diminishing</italic>,
+  <italic>Lost</italic>, and <italic>Intermittent</italic>.</p>
+  <p>The second framework is a <bold>Wetland Cover Type (WCT)
+  classification</bold> method
+  (<xref alt="Singh et al., 2022" rid="ref-singh2022deriving" ref-type="bibr">Singh
+  et al., 2022</xref>) that combines the Modified Normalised Difference
+  Water Index (MNDWI), Normalised Difference Vegetation Index (NDVI),
+  and Normalised Difference Turbidity Index (NDTI) to characterise the
+  biophysical surface composition of wetland pixels into stable,
+  ecologically interpretable cover types including open clear water,
+  turbid water, aquatic vegetation, and moist soil.</p>
+  <p>These two modules address complementary monitoring questions: the
+  dynamics module characterises <italic>when and how</italic> wetland
+  inundation is changing over time, while the WCT module characterises
+  <italic>what</italic> is present at the wetland surface at any given
+  time. Both operate on <monospace>xarray</monospace>
+  <monospace>DataArray</monospace> objects
+  (<xref alt="Hoyer &amp; Hamman, 2017" rid="ref-hoyer2017xarray" ref-type="bibr">Hoyer
+  &amp; Hamman, 2017</xref>), enabling dask-backed parallel processing
+  of large raster archives. Users may supply their own pre-processed
+  imagery or retrieve analysis-ready surface-reflectance data directly
+  from Google Earth Engine (GEE; Gorelick et al.
+  (<xref alt="2017" rid="ref-gorelick2017google" ref-type="bibr">2017</xref>))
+  via an integrated optional acquisition submodule that supports all
+  Landsat missions (4, 5, 7, 8, and 9), Sentinel-2, and shapefile-path
+  or GeoJSON area-of-interest inputs.</p>
+</sec>
+<sec id="statement-of-need">
+  <title>Statement of Need</title>
+  <p>Wetlands cover roughly 5–8percent of Earth’s land surface and
+  deliver ecosystem services valued at tens of trillions of dollars
+  annually, yet global wetland area has declined by approximately
+  35percent since 1970
+  (<xref alt="Davidson, 2014" rid="ref-davidson2014extent" ref-type="bibr">Davidson,
+  2014</xref>;
+  <xref alt="Ramsar Convention Secretariat, 2018" rid="ref-ramsar2018global" ref-type="bibr">Ramsar
+  Convention Secretariat, 2018</xref>). Operational monitoring at basin
+  to continental scales — tracking both inundation dynamics and
+  biophysical surface conditions — is essential for conservation
+  management, restoration prioritisation, and international reporting
+  obligations under the Ramsar Convention.</p>
+  <p>Existing tools for remote sensing-based wetland analysis suffer
+  from one or more of the following limitations: (1) they characterise
+  only binary inundation extent and do not resolve temporal dynamics or
+  surface cover composition
+  (<xref alt="Pekel et al., 2016" rid="ref-pekel2016high" ref-type="bibr">Pekel
+  et al., 2016</xref>); (2) they are embedded in proprietary platforms
+  (ArcGIS Model Builder, GEE JavaScript API) that resist integration
+  into scripted, reproducible workflows; (3) they address either
+  dynamics or cover characterisation but not both within a single
+  interoperable framework; and (4) their methods are distributed as
+  single-use scripts rather than tested, documented software libraries
+  with version histories.</p>
+  <p><monospace>WetlandMapper</monospace> addresses all four gaps. It
+  provides a fully Pythonic, open-source library that unifies the
+  dynamics-classification method of Singh &amp; Sinha
+  (<xref alt="2021" rid="ref-singh2021hydrogeomorphic" ref-type="bibr">2021</xref>)
+  and Singh &amp; Sinha
+  (<xref alt="2022a" rid="ref-singh2022basin" ref-type="bibr">2022a</xref>)
+  — previously dependent on ArcGIS — and the WCT method of Singh et al.
+  (<xref alt="2022" rid="ref-singh2022deriving" ref-type="bibr">2022</xref>)
+  — previously distributed only as GEE JavaScript code and an ArcGIS
+  toolbox — while adding a flexible data-ingestion pathway that supports
+  both user-supplied imagery and automated GEE retrieval. Both methods
+  require no labelled training data and operate on any multispectral
+  archive from which MNDWI, NDVI, and NDTI can be computed.</p>
+</sec>
+<sec id="state-of-the-field">
+  <title>State of the Field</title>
+  <p>The JRC Global Surface Water dataset
+  (<xref alt="Pekel et al., 2016" rid="ref-pekel2016high" ref-type="bibr">Pekel
+  et al., 2016</xref>) characterises long-term open-water occurrence
+  globally at 30 m resolution but does not distinguish wetland surface
+  types. Machine-learning approaches achieve high classification
+  accuracy but require labelled training data that are rarely available
+  at regional scales
+  (<xref alt="Mahdavi et al., 2018" rid="ref-mahdavi2018remote" ref-type="bibr">Mahdavi
+  et al., 2018</xref>;
+  <xref alt="Slagter et al., 2020" rid="ref-slagter2020mapping" ref-type="bibr">Slagter
+  et al., 2020</xref>). SAR-based methods handle cloud cover but require
+  specialist pre-processing workflows
+  (<xref alt="Tsyganskaya et al., 2018" rid="ref-tsyganskaya2018sar" ref-type="bibr">Tsyganskaya
+  et al., 2018</xref>) and site-specific thresholding. The methods
+  unified in <monospace>WetlandMapper</monospace> occupy a practical
+  middle ground — no training labels, applicable to any cloud-free
+  multispectral archive, and producing ecologically interpretable
+  outputs — and <monospace>WetlandMapper</monospace> makes them
+  accessible in a reusable, tested Python library for the first
+  time.</p>
+</sec>
+<sec id="software-design-and-methods">
+  <title>Software Design and Methods</title>
+  <sec id="wetland-dynamics-classification">
+    <title>Wetland Dynamics Classification</title>
+    <p>This module implements the basin-scale inventory and
+    hydrodynamics framework of Singh &amp; Sinha
+    (<xref alt="2022a" rid="ref-singh2022basin" ref-type="bibr">2022a</xref>).
+    Given a multi-temporal MNDWI raster stack, each time step is first
+    thresholded to a binary water-presence layer:</p>
+    <p><disp-formula><alternatives>
+    <tex-math><![CDATA[
+    W_{t} =
+    \begin{cases}
+    1 & \text{if } \mathrm{MNDWI}_{t} > \tau \\
+    0 & \text{otherwise}
+    \end{cases}
+    ]]></tex-math>
+    <mml:math display="block" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:msub><mml:mi>W</mml:mi><mml:mi>t</mml:mi></mml:msub><mml:mo>=</mml:mo><mml:mrow><mml:mo stretchy="true" form="prefix">{</mml:mo><mml:mtable><mml:mtr><mml:mtd columnalign="left" style="text-align: left"><mml:mn>1</mml:mn></mml:mtd><mml:mtd columnalign="left" style="text-align: left"><mml:mrow><mml:mtext mathvariant="normal">if </mml:mtext><mml:mspace width="0.333em"></mml:mspace></mml:mrow><mml:msub><mml:mrow><mml:mi mathvariant="normal">M</mml:mi><mml:mi mathvariant="normal">N</mml:mi><mml:mi mathvariant="normal">D</mml:mi><mml:mi mathvariant="normal">W</mml:mi><mml:mi mathvariant="normal">I</mml:mi></mml:mrow><mml:mi>t</mml:mi></mml:msub><mml:mo>&gt;</mml:mo><mml:mi>τ</mml:mi></mml:mtd></mml:mtr><mml:mtr><mml:mtd columnalign="left" style="text-align: left"><mml:mn>0</mml:mn></mml:mtd><mml:mtd columnalign="left" style="text-align: left"><mml:mtext mathvariant="normal">otherwise</mml:mtext></mml:mtd></mml:mtr></mml:mtable></mml:mrow></mml:mrow></mml:math></alternatives></disp-formula></p>
+    <p>where <inline-formula><alternatives>
+    <tex-math><![CDATA[\tau = 0]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi>τ</mml:mi><mml:mo>=</mml:mo><mml:mn>0</mml:mn></mml:mrow></mml:math></alternatives></inline-formula>
+    by default (positive MNDWI indicates a water-dominated pixel; Xu
+    (<xref alt="2006" rid="ref-xu2006modification" ref-type="bibr">2006</xref>)).
+    Three summary statistics are then derived across the full time
+    series of length <inline-formula><alternatives>
+    <tex-math><![CDATA[T]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>T</mml:mi></mml:math></alternatives></inline-formula>,
+    split by a configurable temporal window
+    <inline-formula><alternatives>
+    <tex-math><![CDATA[n]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>n</mml:mi></mml:math></alternatives></inline-formula>:</p>
+    <p><disp-formula><alternatives>
+    <tex-math><![CDATA[W_{\text{percent}} = \frac{\sum_{t=1}^{T} W_t}{T} \times 100, \quad
+    W_{\text{historic}} = \sum_{t=1}^{n} W_t, \quad
+    W_{\text{recent}} = \sum_{t=T-n+1}^{T} W_t]]></tex-math>
+    <mml:math display="block" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">percent</mml:mtext></mml:msub><mml:mo>=</mml:mo><mml:mfrac><mml:mrow><mml:munderover><mml:mo>∑</mml:mo><mml:mrow><mml:mi>t</mml:mi><mml:mo>=</mml:mo><mml:mn>1</mml:mn></mml:mrow><mml:mi>T</mml:mi></mml:munderover><mml:msub><mml:mi>W</mml:mi><mml:mi>t</mml:mi></mml:msub></mml:mrow><mml:mi>T</mml:mi></mml:mfrac><mml:mo>×</mml:mo><mml:mn>100</mml:mn><mml:mo>,</mml:mo><mml:mspace width="1.0em"></mml:mspace><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">historic</mml:mtext></mml:msub><mml:mo>=</mml:mo><mml:munderover><mml:mo>∑</mml:mo><mml:mrow><mml:mi>t</mml:mi><mml:mo>=</mml:mo><mml:mn>1</mml:mn></mml:mrow><mml:mi>n</mml:mi></mml:munderover><mml:msub><mml:mi>W</mml:mi><mml:mi>t</mml:mi></mml:msub><mml:mo>,</mml:mo><mml:mspace width="1.0em"></mml:mspace><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">recent</mml:mtext></mml:msub><mml:mo>=</mml:mo><mml:munderover><mml:mo>∑</mml:mo><mml:mrow><mml:mi>t</mml:mi><mml:mo>=</mml:mo><mml:mi>T</mml:mi><mml:mo>−</mml:mo><mml:mi>n</mml:mi><mml:mo>+</mml:mo><mml:mn>1</mml:mn></mml:mrow><mml:mi>T</mml:mi></mml:munderover><mml:msub><mml:mi>W</mml:mi><mml:mi>t</mml:mi></mml:msub></mml:mrow></mml:math></alternatives></disp-formula></p>
+    <p>The temporal change signal <inline-formula><alternatives>
+    <tex-math><![CDATA[\Delta W = W_{\text{recent}} - W_{\text{historic}}]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi mathvariant="normal">Δ</mml:mi><mml:mi>W</mml:mi><mml:mo>=</mml:mo><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">recent</mml:mtext></mml:msub><mml:mo>−</mml:mo><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">historic</mml:mtext></mml:msub></mml:mrow></mml:math></alternatives></inline-formula>
+    is used together with <inline-formula><alternatives>
+    <tex-math><![CDATA[W_{\text{percent}}]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">percent</mml:mtext></mml:msub></mml:math></alternatives></inline-formula>
+    and two user-adjustable wet-frequency thresholds
+    (<inline-formula><alternatives>
+    <tex-math><![CDATA[\theta_{\text{wet}}]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msub><mml:mi>θ</mml:mi><mml:mtext mathvariant="normal">wet</mml:mtext></mml:msub></mml:math></alternatives></inline-formula>,
+    <inline-formula><alternatives>
+    <tex-math><![CDATA[\theta_{\text{persis}}]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msub><mml:mi>θ</mml:mi><mml:mtext mathvariant="normal">persis</mml:mtext></mml:msub></mml:math></alternatives></inline-formula>)
+    to assign each pixel to one of six dynamics classes:</p>
+    <table-wrap>
+      <table>
+        <colgroup>
+          <col width="28%" />
+          <col width="72%" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Primary condition</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Persistent</td>
+            <td><inline-formula><alternatives>
+            <tex-math><![CDATA[W_{\text{percent}} \geq \theta_{\text{persis}}]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">percent</mml:mtext></mml:msub><mml:mo>≥</mml:mo><mml:msub><mml:mi>θ</mml:mi><mml:mtext mathvariant="normal">persis</mml:mtext></mml:msub></mml:mrow></mml:math></alternatives></inline-formula></td>
+          </tr>
+          <tr>
+            <td>New</td>
+            <td><inline-formula><alternatives>
+            <tex-math><![CDATA[\Delta W = +n]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi mathvariant="normal">Δ</mml:mi><mml:mi>W</mml:mi><mml:mo>=</mml:mo><mml:mi>+</mml:mi><mml:mi>n</mml:mi></mml:mrow></mml:math></alternatives></inline-formula></td>
+          </tr>
+          <tr>
+            <td>Intensifying</td>
+            <td><inline-formula><alternatives>
+            <tex-math><![CDATA[W_{\text{percent}} \geq \theta_{\text{wet}}]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">percent</mml:mtext></mml:msub><mml:mo>≥</mml:mo><mml:msub><mml:mi>θ</mml:mi><mml:mtext mathvariant="normal">wet</mml:mtext></mml:msub></mml:mrow></mml:math></alternatives></inline-formula>;
+            <inline-formula><alternatives>
+            <tex-math><![CDATA[\;0 < \Delta W < n]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mspace width="0.278em"></mml:mspace><mml:mn>0</mml:mn><mml:mo>&lt;</mml:mo><mml:mi mathvariant="normal">Δ</mml:mi><mml:mi>W</mml:mi><mml:mo>&lt;</mml:mo><mml:mi>n</mml:mi></mml:mrow></mml:math></alternatives></inline-formula></td>
+          </tr>
+          <tr>
+            <td>Diminishing</td>
+            <td><inline-formula><alternatives>
+            <tex-math><![CDATA[W_{\text{percent}} \geq \theta_{\text{wet}}]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">percent</mml:mtext></mml:msub><mml:mo>≥</mml:mo><mml:msub><mml:mi>θ</mml:mi><mml:mtext mathvariant="normal">wet</mml:mtext></mml:msub></mml:mrow></mml:math></alternatives></inline-formula>;
+            <inline-formula><alternatives>
+            <tex-math><![CDATA[\;-n < \Delta W < 0]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mspace width="0.278em"></mml:mspace><mml:mo>−</mml:mo><mml:mi>n</mml:mi><mml:mo>&lt;</mml:mo><mml:mi mathvariant="normal">Δ</mml:mi><mml:mi>W</mml:mi><mml:mo>&lt;</mml:mo><mml:mn>0</mml:mn></mml:mrow></mml:math></alternatives></inline-formula></td>
+          </tr>
+          <tr>
+            <td>Lost</td>
+            <td><inline-formula><alternatives>
+            <tex-math><![CDATA[\Delta W = -n]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi mathvariant="normal">Δ</mml:mi><mml:mi>W</mml:mi><mml:mo>=</mml:mo><mml:mi>−</mml:mi><mml:mi>n</mml:mi></mml:mrow></mml:math></alternatives></inline-formula></td>
+          </tr>
+          <tr>
+            <td>Intermittent</td>
+            <td><inline-formula><alternatives>
+            <tex-math><![CDATA[W_{\text{percent}} \geq \theta_{\text{wet}}]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">percent</mml:mtext></mml:msub><mml:mo>≥</mml:mo><mml:msub><mml:mi>θ</mml:mi><mml:mtext mathvariant="normal">wet</mml:mtext></mml:msub></mml:mrow></mml:math></alternatives></inline-formula>;
+            no directional trend</td>
+          </tr>
+          <tr>
+            <td>Non-wetland</td>
+            <td><inline-formula><alternatives>
+            <tex-math><![CDATA[W_{\text{percent}} < \theta_{\text{wet}}]]></tex-math>
+            <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:msub><mml:mi>W</mml:mi><mml:mtext mathvariant="normal">percent</mml:mtext></mml:msub><mml:mo>&lt;</mml:mo><mml:msub><mml:mi>θ</mml:mi><mml:mtext mathvariant="normal">wet</mml:mtext></mml:msub></mml:mrow></mml:math></alternatives></inline-formula></td>
+          </tr>
+        </tbody>
+      </table>
+    </table-wrap>
+    <p>The entire classification is implemented using vectorised
+    <monospace>xr.where</monospace> operations, enabling chunked
+    parallel execution via Dask with no Python-level pixel
+    iteration.</p>
+  </sec>
+  <sec id="wetland-cover-type-classification">
+    <title>Wetland Cover Type Classification</title>
+    <p>This module implements the multi-index WCT framework of Singh et
+    al.
+    (<xref alt="2022" rid="ref-singh2022deriving" ref-type="bibr">2022</xref>).
+    Three spectral indices are computed from the same multispectral
+    image:</p>
+    <p><disp-formula><alternatives>
+    <tex-math><![CDATA[\text{MNDWI} = \frac{G - \text{SWIR}}{G + \text{SWIR}}, \quad
+      \text{NDVI}  = \frac{\text{NIR} - R}{\text{NIR} + R}, \quad
+      \text{NDTI}  = \frac{R - G}{R + G}]]></tex-math>
+    <mml:math display="block" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mtext mathvariant="normal">MNDWI</mml:mtext><mml:mo>=</mml:mo><mml:mfrac><mml:mrow><mml:mi>G</mml:mi><mml:mo>−</mml:mo><mml:mtext mathvariant="normal">SWIR</mml:mtext></mml:mrow><mml:mrow><mml:mi>G</mml:mi><mml:mo>+</mml:mo><mml:mtext mathvariant="normal">SWIR</mml:mtext></mml:mrow></mml:mfrac><mml:mo>,</mml:mo><mml:mspace width="1.0em"></mml:mspace><mml:mtext mathvariant="normal">NDVI</mml:mtext><mml:mo>=</mml:mo><mml:mfrac><mml:mrow><mml:mtext mathvariant="normal">NIR</mml:mtext><mml:mo>−</mml:mo><mml:mi>R</mml:mi></mml:mrow><mml:mrow><mml:mtext mathvariant="normal">NIR</mml:mtext><mml:mo>+</mml:mo><mml:mi>R</mml:mi></mml:mrow></mml:mfrac><mml:mo>,</mml:mo><mml:mspace width="1.0em"></mml:mspace><mml:mtext mathvariant="normal">NDTI</mml:mtext><mml:mo>=</mml:mo><mml:mfrac><mml:mrow><mml:mi>R</mml:mi><mml:mo>−</mml:mo><mml:mi>G</mml:mi></mml:mrow><mml:mrow><mml:mi>R</mml:mi><mml:mo>+</mml:mo><mml:mi>G</mml:mi></mml:mrow></mml:mfrac></mml:mrow></mml:math></alternatives></disp-formula></p>
+    <p>MNDWI delineates the extent of surface water; NDVI quantifies
+    vegetation presence and density; NDTI quantifies water turbidity.
+    Their combined spectral signatures partition wetland pixels into
+    five biophysically distinct cover types. Two classification
+    implementations are provided: the original quartile-based
+    combination code method (<monospace>classify_wct_ema</monospace>),
+    and an improved continuous-threshold variant
+    (<monospace>classify_wct</monospace>) that allows sub-quartile
+    calibration for different sensors or seasons.</p>
+  </sec>
+  <sec id="data-acquisition-and-temporal-aggregation">
+    <title>Data Acquisition and Temporal Aggregation</title>
+    <p>The optional <monospace>wetlandmapper.gee</monospace> submodule
+    supports all five Landsat missions (4, 5, 7, 8, 9) and Sentinel-2. A
+    <monospace>&quot;LandsatAll&quot;</monospace> option automatically
+    merges available missions for any requested date range with
+    harmonised band names, enabling long-record analyses from 1982 to
+    the present day. An optional <monospace>use_slc_off</monospace>
+    parameter controls whether Landsat 7 images acquired after the 2003
+    Scan Line Corrector failure (which cause ~22percent data gaps per
+    scene) are included. Areas of interest may be provided as a GeoJSON
+    dict, a shapefile path, or a GeoJSON file path; multi-feature
+    shapefiles are dissolved to a single boundary automatically.</p>
+    <p>Server-side temporal compositing reduces data transfer volume for
+    long time series: users may request one median composite per year,
+    month, or meteorological season (DJF / MAM / JJA / SON) rather than
+    every individual scene. The same temporal aggregation functionality
+    is also available client-side via
+    <monospace>aggregate_time()</monospace>, which operates on any
+    <monospace>xarray</monospace> <monospace>DataArray</monospace> or
+    <monospace>Dataset</monospace> regardless of data source.</p>
+  </sec>
+  <sec id="dependencies-and-installation">
+    <title>Dependencies and Installation</title>
+    <p><monospace>WetlandMapper</monospace> requires Python
+    <inline-formula><alternatives>
+    <tex-math><![CDATA[\geq]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mo>≥</mml:mo></mml:math></alternatives></inline-formula>
+    3.9. Core dependencies are <monospace>numpy</monospace>
+    (<xref alt="Harris et al., 2020" rid="ref-harris2020array" ref-type="bibr">Harris
+    et al., 2020</xref>), <monospace>xarray</monospace>
+    (<xref alt="Hoyer &amp; Hamman, 2017" rid="ref-hoyer2017xarray" ref-type="bibr">Hoyer
+    &amp; Hamman, 2017</xref>), and <monospace>rioxarray</monospace>
+    (<xref alt="Snow &amp; others, 2022" rid="ref-snow2022rioxarray" ref-type="bibr">Snow
+    &amp; others, 2022</xref>). The GEE submodule additionally requires
+    <monospace>earthengine-api</monospace>,
+    <monospace>rasterio</monospace>, <monospace>xee</monospace>,
+    <monospace>dask</monospace>, and <monospace>geopandas</monospace>.
+    Installation:</p>
+    <preformat>pip install wetlandmapper                # core
+pip install &quot;wetlandmapper[gee]&quot;         # with GEE + shapefile support
+pip install &quot;wetlandmapper[plot]&quot;        # with visualisation utilities</preformat>
+    <p>Detailed platform-specific installation instructions, including
+    GEE authentication setup, are provided in
+    <monospace>INSTALL.md</monospace> in the repository.</p>
+  </sec>
+</sec>
+<sec id="usage">
+  <title>Usage</title>
+  <p>A minimal end-to-end example for each workflow:</p>
+  <code language="python">import xarray as xr
+from wetlandmapper import compute_mndwi, classify_dynamics
+from wetlandmapper import compute_indices, classify_wct_ema
+from wetlandmapper.gee import fetch
+
+# --- Dynamics: fetch annual composites from all Landsat missions ---
+mndwi = fetch(&quot;study_area.shp&quot;, &quot;1984-01-01&quot;, &quot;2023-12-31&quot;,
+              sensor=&quot;LandsatAll&quot;, temporal_aggregation=&quot;annual&quot;)
+dynamics = classify_dynamics(mndwi, nYear=3,
+                             thresholdWet=25, thresholdPersis=75)
+dynamics.rio.to_raster(&quot;wetland_dynamics.tif&quot;)
+
+# --- WCT: single composite → 5 biophysical cover types
+# --- ds_composite is an xarray multispectral dataset (a Landsat .tiff) 
+ds_composite = xr.load_dataset('Landsat.tiff')
+indices = compute_indices(ds_composite, green_band=&quot;B3&quot;, red_band=&quot;B4&quot;,
+                          nir_band=&quot;B5&quot;, swir_band=&quot;B6&quot;)
+wct = classify_wct_ema(indices)
+wct.rio.to_raster(&quot;wetland_cover_types.tif&quot;)</code>
+  <p>A Jupyter notebook demonstrating both workflows on synthetic data,
+  with full GEE acquisition and interactive visualisation sections, is
+  included at <monospace>notebooks/demo_wetlandmapper.ipynb</monospace>.
+  Full API documentation is available at
+  <ext-link ext-link-type="uri" xlink:href="https://wetlandmapper.readthedocs.io">https://wetlandmapper.readthedocs.io</ext-link>.</p>
+</sec>
+<sec id="research-impact-and-context">
+  <title>Research Impact and Context</title>
+  <p>The dynamics module is derived from the methodology of Singh &amp;
+  Sinha
+  (<xref alt="2022a" rid="ref-singh2022basin" ref-type="bibr">2022a</xref>),
+  where it was applied to over 3,000 floodplain wetlands in the Ramganga
+  Basin, north India, using a Landsat time series spanning
+  1994–2019.</p>
+  <p>That study demonstrated that frequency-based temporal aggregation
+  can effectively distinguish permanently inundated, seasonally active,
+  and recently changed wetlands at basin scale, providing a validated
+  inventory framework applicable to wetland restoration prioritisation
+  (<xref alt="Singh &amp; Sinha, 2022b" rid="ref-singh2022integrating" ref-type="bibr">Singh
+  &amp; Sinha, 2022b</xref>).</p>
+  <p>The WCT module is derived from Singh et al.
+  (<xref alt="2022" rid="ref-singh2022deriving" ref-type="bibr">2022</xref>),
+  where the MNDWI–NDVI–NDTI combination was validated across three
+  Ramsar-listed wetlands in contrasting geomorphic and climatic settings
+  — Kaabar Tal (Ganga floodplain), Chilika Lagoon (coastal), and Nal
+  Sarovar (semi-arid) — demonstrating that the WCTs are stable in space
+  and time, meaning comparable biophysical conditions correspond to the
+  same WCT irrespective of geographic location.</p>
+  <p>By unifying both workflows in a single, tested Python package with
+  flexible data ingestion, <monospace>WetlandMapper</monospace> enables
+  application of these frameworks globally in fully scripted,
+  reproducible workflows, without dependence on proprietary GEE or
+  ArcGIS environments.</p>
+</sec>
+<sec id="acknowledgements">
+  <title>Acknowledgements</title>
+  <p>The author acknowledges the ISRO–IIT Kanpur Space Technology Cell
+  and WWF-India for funding the original research underlying both
+  methods, and the Google Earth Engine team for providing
+  cloud-computing access. The author is a Newton International Fellow
+  funded by The Royal Society, London, and gratefully acknowledges this
+  support. The facilities and support provided by Aberystwyth University
+  are also duly acknowledged.</p>
+  <sec id="ai-assistance">
+    <title>AI Assistance</title>
+    <p>Development of this software package was assisted by Claude
+    (Anthropic), an AI language model, for tasks including code
+    scaffolding, packaging configuration, continuous integration setup,
+    docstring writing, and debugging. The scientific methodology,
+    classification algorithms, spectral index thresholds, and validation
+    are based entirely on the author’s prior peer-reviewed work
+    (<xref alt="Singh et al., 2022" rid="ref-singh2022deriving" ref-type="bibr">Singh
+    et al., 2022</xref>;
+    <xref alt="Singh &amp; Sinha, 2021" rid="ref-singh2021hydrogeomorphic" ref-type="bibr">Singh
+    &amp; Sinha, 2021</xref>,
+    <xref alt="2022a" rid="ref-singh2022basin" ref-type="bibr">2022a</xref>),
+    and all scientific content, design decisions, and results presented
+    here are the author’s own.</p>
+  </sec>
+</sec>
+</body>
+<back>
+<ref-list>
+  <title></title>
+  <ref id="ref-singh2021hydrogeomorphic">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Singh</surname><given-names>Manudeo</given-names></name>
+        <name><surname>Sinha</surname><given-names>Rajiv</given-names></name>
+      </person-group>
+      <article-title>Hydrogeomorphic indicators of wetland health inferred from multi-temporal remote sensing data for a new ramsar site (kaabar tal), india</article-title>
+      <source>Ecological Indicators</source>
+      <year iso-8601-date="2021">2021</year>
+      <volume>127</volume>
+      <issue>1</issue>
+      <pub-id pub-id-type="doi">10.1016/j.ecolind.2021.107739</pub-id>
+      <fpage>107739</fpage>
+      <lpage></lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-singh2022basin">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Singh</surname><given-names>Manudeo</given-names></name>
+        <name><surname>Sinha</surname><given-names>Rajiv</given-names></name>
+      </person-group>
+      <article-title>A basin-scale inventory and hydrodynamics of floodplain wetlands based on time-series of remote sensing data</article-title>
+      <source>Remote Sensing Letters</source>
+      <year iso-8601-date="2022">2022</year>
+      <volume>13</volume>
+      <issue>1</issue>
+      <pub-id pub-id-type="doi">10.1080/2150704X.2021.1980919</pub-id>
+      <fpage>1</fpage>
+      <lpage>13</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-singh2022deriving">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Singh</surname><given-names>Manudeo</given-names></name>
+        <name><surname>Allaka</surname><given-names>Satyasri</given-names></name>
+        <name><surname>Gupta</surname><given-names>Praveen K.</given-names></name>
+        <name><surname>Patel</surname><given-names>J. G.</given-names></name>
+        <name><surname>Sinha</surname><given-names>Rajiv</given-names></name>
+      </person-group>
+      <article-title>Deriving wetland-cover types (WCTs) from integration of multispectral indices based on Earth observation data</article-title>
+      <source>Environmental Monitoring and Assessment</source>
+      <year iso-8601-date="2022">2022</year>
+      <volume>194</volume>
+      <issue>12</issue>
+      <pub-id pub-id-type="doi">10.1007/s10661-022-10541-7</pub-id>
+      <fpage>878</fpage>
+      <lpage></lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-singh2022integrating">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Singh</surname><given-names>Manudeo</given-names></name>
+        <name><surname>Sinha</surname><given-names>Rajiv</given-names></name>
+      </person-group>
+      <article-title>Integrating hydrological connectivity in a process–response framework for restoration and monitoring prioritisation of floodplain wetlands in the ramganga basin, india</article-title>
+      <source>Water</source>
+      <year iso-8601-date="2022">2022</year>
+      <volume>14</volume>
+      <issue>21</issue>
+      <pub-id pub-id-type="doi">10.3390/w14213520</pub-id>
+      <fpage>3520</fpage>
+      <lpage></lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-wetlandmapper_zenodo">
+    <element-citation publication-type="software">
+      <person-group person-group-type="author">
+        <name><surname>Singh</surname><given-names>Manudeo</given-names></name>
+      </person-group>
+      <article-title>WetlandMapper: Automatic wetland mapping, dynamics classification, and cover-type characterisation from multispectral time-series data</article-title>
+      <publisher-name>Zenodo</publisher-name>
+      <year iso-8601-date="2026">2026</year>
+      <uri>https://doi.org/10.5281/zenodo.18967177</uri>
+      <pub-id pub-id-type="doi">10.5281/zenodo.18967177</pub-id>
+    </element-citation>
+  </ref>
+  <ref id="ref-gorelick2017google">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Gorelick</surname><given-names>Noel</given-names></name>
+        <name><surname>Hancher</surname><given-names>Matt</given-names></name>
+        <name><surname>Dixon</surname><given-names>Mike</given-names></name>
+        <name><surname>Ilyushchenko</surname><given-names>Simon</given-names></name>
+        <name><surname>Thau</surname><given-names>David</given-names></name>
+        <name><surname>Moore</surname><given-names>Rebecca</given-names></name>
+      </person-group>
+      <article-title>Google Earth Engine: Planetary-scale geospatial analysis for everyone</article-title>
+      <source>Remote Sensing of Environment</source>
+      <year iso-8601-date="2017">2017</year>
+      <volume>202</volume>
+      <pub-id pub-id-type="doi">10.1016/j.rse.2017.06.031</pub-id>
+      <fpage>18</fpage>
+      <lpage>27</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-hoyer2017xarray">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Hoyer</surname><given-names>Stephan</given-names></name>
+        <name><surname>Hamman</surname><given-names>Joseph J.</given-names></name>
+      </person-group>
+      <article-title>Xarray: N-D labeled arrays and datasets in Python</article-title>
+      <source>Journal of Open Research Software</source>
+      <year iso-8601-date="2017">2017</year>
+      <volume>5</volume>
+      <issue>1</issue>
+      <pub-id pub-id-type="doi">10.5334/jors.148</pub-id>
+      <fpage>10</fpage>
+      <lpage></lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-harris2020array">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Harris</surname><given-names>Charles R.</given-names></name>
+        <name><surname>Millman</surname><given-names>K. Jarrod</given-names></name>
+        <name><surname>Walt</surname><given-names>Stéfan J. van der</given-names></name>
+        <name><surname>others</surname></name>
+      </person-group>
+      <article-title>Array programming with NumPy</article-title>
+      <source>Nature</source>
+      <year iso-8601-date="2020">2020</year>
+      <volume>585</volume>
+      <issue>7825</issue>
+      <pub-id pub-id-type="doi">10.1038/s41586-020-2649-2</pub-id>
+      <fpage>357</fpage>
+      <lpage>362</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-snow2022rioxarray">
+    <element-citation publication-type="software">
+      <person-group person-group-type="author">
+        <name><surname>Snow</surname><given-names>Alan D.</given-names></name>
+        <name><surname>others</surname></name>
+      </person-group>
+      <article-title>Rioxarray: Geospatial xarray extension powered by rasterio</article-title>
+      <publisher-name>Zenodo</publisher-name>
+      <year iso-8601-date="2022">2022</year>
+      <pub-id pub-id-type="doi">10.5281/zenodo.4570456</pub-id>
+    </element-citation>
+  </ref>
+  <ref id="ref-xu2006modification">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Xu</surname><given-names>Hanqiu</given-names></name>
+      </person-group>
+      <article-title>Modification of normalised difference water index (NDWI) to enhance open water features in remotely sensed imagery</article-title>
+      <source>International Journal of Remote Sensing</source>
+      <year iso-8601-date="2006">2006</year>
+      <volume>27</volume>
+      <issue>14</issue>
+      <pub-id pub-id-type="doi">10.1080/01431160600589179</pub-id>
+      <fpage>3025</fpage>
+      <lpage>3033</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-davidson2014extent">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Davidson</surname><given-names>Nick C.</given-names></name>
+      </person-group>
+      <article-title>How much wetland has the world lost? Long-term and recent trends in global wetland area</article-title>
+      <source>Marine and Freshwater Research</source>
+      <year iso-8601-date="2014">2014</year>
+      <volume>65</volume>
+      <issue>10</issue>
+      <pub-id pub-id-type="doi">10.1071/MF14173</pub-id>
+      <fpage>934</fpage>
+      <lpage>941</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-ramsar2018global">
+    <element-citation publication-type="report">
+      <person-group person-group-type="author">
+        <string-name>Ramsar Convention Secretariat</string-name>
+      </person-group>
+      <article-title>Global wetland outlook: State of the world’s wetlands and their services to people</article-title>
+      <publisher-name>Ramsar Convention Secretariat</publisher-name>
+      <publisher-loc>Gland, Switzerland</publisher-loc>
+      <year iso-8601-date="2018">2018</year>
+      <uri>https://www.global-wetland-outlook.ramsar.org</uri>
+    </element-citation>
+  </ref>
+  <ref id="ref-pekel2016high">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Pekel</surname><given-names>Jean-François</given-names></name>
+        <name><surname>Cottam</surname><given-names>Andrew</given-names></name>
+        <name><surname>Gorelick</surname><given-names>Noel</given-names></name>
+        <name><surname>Belward</surname><given-names>Alan S.</given-names></name>
+      </person-group>
+      <article-title>High-resolution mapping of global surface water and its long-term changes</article-title>
+      <source>Nature</source>
+      <year iso-8601-date="2016">2016</year>
+      <volume>540</volume>
+      <issue>7633</issue>
+      <pub-id pub-id-type="doi">10.1038/nature20584</pub-id>
+      <fpage>418</fpage>
+      <lpage>422</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-mahdavi2018remote">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Mahdavi</surname><given-names>Salman</given-names></name>
+        <name><surname>Salehi</surname><given-names>Bahram</given-names></name>
+        <name><surname>Granger</surname><given-names>Jean</given-names></name>
+        <name><surname>Amani</surname><given-names>Meisam</given-names></name>
+        <name><surname>Brisco</surname><given-names>Brian</given-names></name>
+        <name><surname>Huang</surname><given-names>Weiming</given-names></name>
+      </person-group>
+      <article-title>Remote sensing for wetland classification: A comprehensive review</article-title>
+      <source>GIScience &amp; Remote Sensing</source>
+      <year iso-8601-date="2018">2018</year>
+      <volume>55</volume>
+      <issue>5</issue>
+      <pub-id pub-id-type="doi">10.1080/15481603.2017.1419602</pub-id>
+      <fpage>623</fpage>
+      <lpage>658</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-slagter2020mapping">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Slagter</surname><given-names>Bart</given-names></name>
+        <name><surname>Tsendbazar</surname><given-names>Nandin-Erdene</given-names></name>
+        <name><surname>Vollrath</surname><given-names>Andreas</given-names></name>
+        <name><surname>Reiche</surname><given-names>Johannes</given-names></name>
+      </person-group>
+      <article-title>Mapping wetland characteristics using temporally dense Sentinel-1 and Sentinel-2 data: A case study in the St. Lucia wetlands, South Africa</article-title>
+      <source>International Journal of Applied Earth Observation and Geoinformation</source>
+      <year iso-8601-date="2020">2020</year>
+      <volume>86</volume>
+      <pub-id pub-id-type="doi">10.1016/j.jag.2019.102009</pub-id>
+      <fpage>102009</fpage>
+      <lpage></lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-tsyganskaya2018sar">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Tsyganskaya</surname><given-names>Viktoriya</given-names></name>
+        <name><surname>Martinis</surname><given-names>Sandro</given-names></name>
+        <name><surname>Marzahn</surname><given-names>Philip</given-names></name>
+        <name><surname>Ludwig</surname><given-names>Ralf</given-names></name>
+      </person-group>
+      <article-title>SAR-based detection of flooded vegetation – a review of characteristics and approaches</article-title>
+      <source>International Journal of Remote Sensing</source>
+      <year iso-8601-date="2018">2018</year>
+      <volume>39</volume>
+      <issue>8</issue>
+      <pub-id pub-id-type="doi">10.1080/01431161.2017.1420938</pub-id>
+      <fpage>2255</fpage>
+      <lpage>2293</lpage>
+    </element-citation>
+  </ref>
+</ref-list>
+</back>
+</article>

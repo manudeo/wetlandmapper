@@ -4,13 +4,17 @@ dynamics.py
 # Copyright (c) 2026, Manudeo Singh          #
 # Author: Manudeo Singh, March 2026          #
 -----------
-Wetland detection and temporal dynamics classification from an MNDWI time series.
+Wetland detection and temporal dynamics classification from a water index time series.
 
 Implements the basin-scale inventory and hydrodynamics framework of:
     Singh & Sinha (2022). A basin-scale inventory and hydrodynamics of floodplain
     wetlands based on time-series of remote sensing data.
     Remote Sensing Letters, 13(1), 1–13.
     https://doi.org/10.1080/2150704X.2021.1980919
+
+Supports any water index (MNDWI, AWEIsh, AWEInsh, etc.) as input. The classification
+is based on temporal patterns of wetness frequency and directional change over
+the time series.
 
 Six dynamics classes
 --------------------
@@ -37,6 +41,8 @@ Notes
   if needed; the dominant class is selected by priority order in the code.
 - 'Persistent' (10) takes highest priority because a consistently wet pixel
   subsumes directional change categories.
+- Water index thresholds: Wet pixels are identified where index > 0 (default).
+  This works for MNDWI, AWEIsh, AWEInsh, and most water indices.
 """
 
 from __future__ import annotations
@@ -86,24 +92,25 @@ DYNAMICS_COLORS: dict[int, str] = {
 # ---------------------------------------------------------------------------
 
 def classify_dynamics(
-    mndwi: xr.DataArray,
+    water_index: xr.DataArray,
     nYear: int = 3,
     thresholdWet: float = 25.0,
     thresholdPersis: float = 75.0,
-    mndwi_threshold: float = 0.0,
+    water_threshold: float = 0.0,
 ) -> xr.DataArray:
     """Classify wetland pixels into six temporal dynamics classes.
 
-    The function aggregates a multi-temporal MNDWI raster stack into three
+    The function aggregates a multi-temporal water index raster stack into three
     summary statistics (overall wet frequency, historic wet count, recent wet
     count) and then applies threshold-based rules to assign each pixel a
     dynamics class.
 
     Parameters
     ----------
-    mndwi : xr.DataArray
-        Multi-temporal MNDWI time series with a ``time`` dimension.
-        Values should be in the range [-1, 1].
+    water_index : xr.DataArray
+        Multi-temporal water index time series with a ``time`` dimension.
+        Can be MNDWI, AWEIsh, AWEInsh, or any water index where positive values
+        indicate water. Values should typically be in the range [-1, 1].
         Must have a CRS set (via rioxarray) to preserve spatial reference in output.
     nYear : int, optional
         Number of time steps (e.g., years or seasons) used to define each
@@ -116,23 +123,23 @@ def classify_dynamics(
     thresholdPersis : float, optional
         Wet-frequency percentage (0–100) above which a pixel is classified as
         Persistent. Should be > thresholdWet. Default: 75.
-    mndwi_threshold : float, optional
-        MNDWI value above which a pixel is counted as 'wet' at any time step.
-        Default: 0.0 (positive MNDWI = water-dominated pixel).
+    water_threshold : float, optional
+        Water index value above which a pixel is counted as 'wet' at any time step.
+        Default: 0.0 (positive index = water-dominated pixel).
 
     Returns
     -------
     xr.DataArray
         Integer raster of dynamics class codes (dtype int8).
         Class codes are defined in ``DYNAMICS_CLASSES``.
-        The CRS from ``mndwi`` is preserved if rioxarray is available.
+        The CRS from ``water_index`` is preserved if rioxarray is available.
         The DataArray name encodes the parameter values used, e.g.
         ``"dynamics_nYear3_wet25_persis75"``.
 
     Raises
     ------
     ValueError
-        If ``nYear * 2 > len(mndwi.time)``, i.e. the historic and recent windows
+        If ``nYear * 2 > len(water_index.time)``, i.e. the historic and recent windows
         would overlap or exceed the available time series.
     ValueError
         If ``thresholdPersis <= thresholdWet``.
@@ -149,6 +156,16 @@ def classify_dynamics(
     ... )
     >>> dynamics.rio.to_raster("wetland_dynamics.tif")
 
+    Use AWEIsh instead of MNDWI for better shadow suppression:
+
+    >>> water_indices = compute_water_indices(ds)
+    >>> dynamics = classify_dynamics(
+    ...     water_indices["AWEIsh"],
+    ...     nYear=3,
+    ...     thresholdWet=25,
+    ...     thresholdPersis=75,
+    ... )
+
     Notes
     -----
     All classification steps use ``xr.where`` for vectorised, Dask-compatible
@@ -157,12 +174,12 @@ def classify_dynamics(
     # ------------------------------------------------------------------
     # Input validation
     # ------------------------------------------------------------------
-    if "time" not in mndwi.dims:
+    if "time" not in water_index.dims:
         raise ValueError(
-            "Input 'mndwi' must have a 'time' dimension. "
-            f"Found dimensions: {mndwi.dims}"
+            "Input 'water_index' must have a 'time' dimension. "
+            f"Found dimensions: {water_index.dims}"
         )
-    n_time = len(mndwi.time)
+    n_time = len(water_index.time)
     if nYear * 2 > n_time:
         raise ValueError(
             f"nYear={nYear} requires at least {nYear * 2} time steps, "
@@ -179,7 +196,7 @@ def classify_dynamics(
     # ------------------------------------------------------------------
     # Stage 1: Binary water mask per time step
     # ------------------------------------------------------------------
-    water_binary = xr.where(mndwi > mndwi_threshold, 1, 0)
+    water_binary = xr.where(water_index > water_threshold, 1, 0)
 
     # ------------------------------------------------------------------
     # Stage 2: Temporal aggregation
@@ -247,7 +264,7 @@ def classify_dynamics(
     # ------------------------------------------------------------------
     if _HAS_RIO:
         try:
-            crs = mndwi.rio.crs
+            crs = water_index.rio.crs
             if crs is not None:
                 classification = classification.rio.write_crs(crs)
         except Exception as e:
@@ -267,7 +284,7 @@ def classify_dynamics(
         nYear=nYear,
         thresholdWet=thresholdWet,
         thresholdPersis=thresholdPersis,
-        mndwi_threshold=mndwi_threshold,
+        water_threshold=water_threshold,
         n_timesteps=int(n_time),
         class_codes=str(DYNAMICS_CLASSES),
         references=(
@@ -284,25 +301,25 @@ def classify_dynamics(
 # ---------------------------------------------------------------------------
 
 def compute_wet_frequency(
-    mndwi: xr.DataArray,
-    mndwi_threshold: float = 0.0,
+    water_index: xr.DataArray,
+    water_threshold: float = 0.0,
 ) -> xr.DataArray:
     """Return the pixel-wise wet frequency (%) across the full time series.
 
     Parameters
     ----------
-    mndwi : xr.DataArray
-        Multi-temporal MNDWI with a ``time`` dimension.
-    mndwi_threshold : float
-        MNDWI value above which a pixel is counted as wet. Default: 0.0.
+    water_index : xr.DataArray
+        Multi-temporal water index with a ``time`` dimension.
+    water_threshold : float
+        Water index value above which a pixel is counted as wet. Default: 0.0.
 
     Returns
     -------
     xr.DataArray
         Wet frequency in percent (0–100).
     """
-    water_binary = xr.where(mndwi > mndwi_threshold, 1, 0)
-    freq = (water_binary.sum(dim="time") / len(mndwi.time)) * 100
+    water_binary = xr.where(water_index > water_threshold, 1, 0)
+    freq = (water_binary.sum(dim="time") / len(water_index.time)) * 100
     freq.name = "wet_frequency_pct"
     freq.attrs["long_name"] = "Wet Frequency (%)"
     return freq

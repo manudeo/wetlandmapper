@@ -16,10 +16,21 @@
 
 | Module | Method | Output |
 |--------|--------|--------|
-| `classify_dynamics` | MNDWI time-series aggregation ([Singh & Sinha 2022, *RSL*](https://doi.org/10.1080/2150704X.2021.1980919)) | 6 temporal dynamics classes |
+| `classify_dynamics` | Water index time-series aggregation ([Singh & Sinha 2022, *RSL*](https://doi.org/10.1080/2150704X.2021.1980919)) | 6 temporal dynamics classes |
 | `classify_wct` / `classify_wct_ema` | MNDWI + NDVI + NDTI combination ([Singh et al. 2022, *EMA*](https://doi.org/10.1007/s10661-022-10541-7)) | 5 biophysical cover types |
 
-Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, etc.) and require **no labelled training data**. Data can be supplied by the user or fetched directly from **Google Earth Engine** using any Landsat mission or Sentinel-2.
+Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, MODIS, etc.) and require **no labelled training data**. Data can be supplied by the user or fetched directly from **Google Earth Engine** using any Landsat mission, Sentinel-2, or MODIS.
+
+## Water Indices
+
+WetlandMapper supports multiple water detection indices for optimal performance across different environments:
+
+- **MNDWI** (Modified NDWI): Best for most applications, uses SWIR band
+- **NDWI** (Original NDWI): Alternative using NIR band, less sensitive to built-up areas  
+- **AWEIsh** (Shadow-corrected): Superior in mountainous terrain with shadows
+- **AWEInsh** (No shadow): Simplified version when blue band unavailable
+
+Use `compute_water_indices()` to compare all indices on your data.
 
 ---
 
@@ -45,6 +56,32 @@ Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, etc.)
 | 4 | **Emergent / Floating Vegetation** | Moderate MNDWI, high NDVI |
 | 5 | **Moist / Waterlogged Soil** | Low–moderate MNDWI, low NDVI |
 | 0 | **Non-wetland** | Below water threshold |
+
+## Additional Spectral Indices
+
+WetlandMapper also provides additional water indices for enhanced wetland detection:
+
+- **AWEIsh (Automated Water Extraction Index Shadow)**: Effective for water body extraction in various environments.
+- **AWEInsh (Automated Water Extraction Index No Shadow)**: Similar to AWEIsh but without shadow consideration.
+
+## Terrain Analysis
+
+WetlandMapper includes topographic analysis tools for enhanced wetland mapping:
+
+- **Slope**: Computes terrain slope in degrees from elevation data. Useful for identifying wetlands in flat areas (<5°) vs. steep terrain.
+- **TPI (Topographic Position Index)**: Calculates relative topographic position to distinguish plateaus from valleys. Helps identify wetland depressions.
+- **Local Range**: Computes local elevation range within a moving window. Useful for detecting micro-topographic variations in wetlands.
+
+## Google Earth Engine Integration
+
+WetlandMapper can fetch satellite data directly from Google Earth Engine:
+
+- **Supported Missions**: Landsat 4-9, Sentinel-2, MODIS
+- **Cloud Masking**: Automatic cloud and shadow removal
+- **DEM Masking**: Optional elevation-based masking using Copernicus GLO-30 DEM (30m resolution)
+- **Custom Band Mapping**: Flexible band selection for different sensors
+
+Use `dem_mask` parameter in `fetch()` and `fetch_xee()` functions to apply elevation thresholds and exclude high-elevation areas from analysis.
 
 ---
 
@@ -111,6 +148,7 @@ indices = compute_indices(
     ds_composite,
     green_band="B3", red_band="B4",
     nir_band="B5",   swir_band="B6",  # Landsat 8/9
+    include_awei=True,  # include AWEIsh and AWEInsh indices
 )
 wct = classify_wct_ema(indices)
 wct.rio.to_raster("wetland_cover_types.tif")
@@ -127,7 +165,7 @@ aoi = "study_area/chilika.shp"           # shapefile
 # aoi = "study_area/chilika.geojson"     # GeoJSON file
 # aoi = {"type": "Polygon", ...}         # GeoJSON dict
 
-# Long-record annual composites — merges all available Landsat missions
+# Long-record annual composites — merges all available Landsat missions or uses MODIS
 mndwi = fetch(
     aoi, start="1984-01-01", end="2023-12-31",
     sensor="LandsatAll",
@@ -135,6 +173,13 @@ mndwi = fetch(
     use_slc_off=False,     # exclude Landsat 7 post-SLC-failure images
 )
 dynamics = classify_dynamics(mndwi, nYear=3, thresholdWet=25, thresholdPersis=75)
+
+# MODIS-based analysis for coarser resolution studies
+mndwi_modis = fetch(
+    aoi, start="2000-01-01", end="2023-12-31",
+    sensor="MODIS",
+    temporal_aggregation="annual",
+)
 
 # Single-sensor post-monsoon WCT composite
 indices = fetch(
@@ -152,6 +197,23 @@ from wetlandmapper import aggregate_time
 mndwi_annual   = aggregate_time(mndwi_ts, freq="annual",   method="median")
 mndwi_seasonal = aggregate_time(mndwi_ts, freq="seasonal", method="median")
 mndwi_monthly  = aggregate_time(mndwi_ts, freq="monthly",  method="median")
+```
+
+### Terrain Analysis
+
+```python
+from wetlandmapper.terrain import compute_slope, compute_tpi, mask_terrain_artifacts
+import xarray as xr
+
+# Load elevation data
+dem = xr.open_dataset("elevation.nc")["elevation"]
+
+# Compute terrain derivatives
+slope = compute_slope(dem)
+tpi = compute_tpi(dem, window_size=5)
+
+# Mask artifacts in terrain data
+dem_clean = mask_terrain_artifacts(dem, slope_threshold=30)
 ```
 
 ### Visualisation

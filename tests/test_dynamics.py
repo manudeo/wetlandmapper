@@ -122,8 +122,8 @@ class TestClassifyDynamics:
     # ------------------------------------------------------------------
 
     def test_custom_mndwi_threshold(self, mndwi_all_wet):
-        """With a very high MNDWI threshold, wet pixels become dry → all Non-wetland."""
-        result = classify_dynamics(mndwi_all_wet, nYear=3, mndwi_threshold=0.9)
+        """With a very high water index threshold, wet pixels become dry → all Non-wetland."""
+        result = classify_dynamics(mndwi_all_wet, nYear=3, water_threshold=0.9)
         assert (result == 0).all()
 
 

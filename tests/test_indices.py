@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from wetlandmapper import compute_mndwi, compute_ndvi, compute_ndti, compute_indices
+from wetlandmapper import compute_mndwi, compute_ndwi, compute_ndvi, compute_ndti, compute_indices
 
 
 class TestComputeMNDWI:
@@ -51,6 +51,29 @@ class TestComputeMNDWI:
         )
         mndwi = compute_mndwi(da, green_band="green", swir_band="swir")
         assert (mndwi.values > 0).all()
+
+
+class TestComputeNDWI:
+    def test_positive_values_for_water(self, multispectral_ds):
+        """Open-water pixels (high green, low nir) should yield positive NDWI."""
+        ndwi = compute_ndwi(multispectral_ds, green_band="green", nir_band="nir")
+        # Zone 1 (rows 0-4) is open water → NDWI should be positive
+        assert (ndwi.isel(y=slice(0, 5)) > 0).all()
+
+    def test_negative_values_for_vegetation(self, multispectral_ds):
+        """Vegetated pixels (low green, high nir) should yield negative NDWI."""
+        ndwi = compute_ndwi(multispectral_ds, green_band="green", nir_band="nir")
+        # Zone 3 (rows 10-14) has high NIR, low green
+        assert (ndwi.isel(y=slice(10, 15)) < 0).all()
+
+    def test_output_range(self, multispectral_ds):
+        ndwi = compute_ndwi(multispectral_ds, green_band="green", nir_band="nir")
+        assert float(ndwi.max()) <= 1.0
+        assert float(ndwi.min()) >= -1.0
+
+    def test_output_name(self, multispectral_ds):
+        ndwi = compute_ndwi(multispectral_ds)
+        assert ndwi.name == "NDWI"
 
 
 class TestComputeNDVI:
