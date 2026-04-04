@@ -191,15 +191,13 @@ position can confound spectral signatures. Functions include:
 
 ## Data Acquisition and Temporal Aggregation
 
-## Data Acquisition and Temporal Aggregation
-
 The optional `wetlandmapper.gee` submodule supports all five Landsat missions (4, 5,
 7, 8, 9), Sentinel-2, and MODIS. A `"LandsatAll"` option automatically merges available
 missions for any requested date range with harmonised band names, enabling long-record
 analyses from 1982 to the present day. `"MODISAll"` provides similar functionality for
 MODIS Terra and Aqua missions. An optional `use_slc_off` parameter controls
 whether Landsat 7 images acquired after the 2003 Scan Line Corrector failure (which
-cause ~22percent data gaps per scene) are included. Areas of interest may be provided as a
+cause ~22 percent data gaps per scene) are included. Areas of interest may be provided as a
 GeoJSON dict, a shapefile path, or a GeoJSON file path; multi-feature shapefiles are
 dissolved to a single boundary automatically.
 
@@ -211,13 +209,27 @@ operates on any `xarray` `DataArray` or `Dataset` regardless of data source.
 
 ## Dependencies and Installation
 
-`WetlandMapper` requires Python $\geq$ 3.9. Core dependencies are `numpy`
+`WetlandMapper` requires Python ≥ 3.9. Core dependencies are `numpy`
 [@harris2020array], `xarray` [@hoyer2017xarray], and `rioxarray` [@snow2022rioxarray].
 The GEE submodule additionally requires `earthengine-api`, `rasterio`, `xee`, `dask`,
 and `geopandas`. The plotting submodule requires `matplotlib` [@hunter2007matplotlib].
-Installation:
 
+Installation via **conda** (recommended for ease of dependency management):
+
+```bash
+# Core functionality
+conda install -c conda-forge wetlandmapper
+
+# With Google Earth Engine support
+conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio
+
+# Complete installation with all extras
+conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio matplotlib
 ```
+
+Alternatively, installation via **pip**:
+
+```bash
 pip install wetlandmapper                # core
 pip install "wetlandmapper[gee]"         # with GEE + shapefile support
 pip install "wetlandmapper[plot]"        # with visualisation utilities
@@ -272,9 +284,13 @@ plot_wct(wct, title="Wetland Cover Types")
 ```
 
 A Jupyter notebook demonstrating both workflows on synthetic data, with full GEE
-acquisition, terrain analysis, and interactive visualisation sections, is included at
+acquisition, terrain analysis, and interactive visualisation sections, is included in
+the repository.
 
-That study demonstrated that frequency-based temporal aggregation can effectively
+# Validation and Results
+
+The dynamics module is derived from @singh2022basin, where the frequency-based 
+temporal aggregation method demonstrated that frequency-based temporal aggregation can effectively
 distinguish permanently inundated, seasonally active, and recently changed wetlands at
 basin scale, providing a validated inventory framework applicable to wetland restoration
 prioritisation [@singh2022integrating].
