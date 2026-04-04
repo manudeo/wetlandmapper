@@ -6,6 +6,9 @@ on:
       - paper.bib
       - .github/workflows/draft-pdf.yml
 
+permissions:
+  contents: write
+
 jobs:
   paper:
     runs-on: ubuntu-latest
@@ -32,3 +35,4 @@ jobs:
           message: 'chore: Auto-generated paper PDF'
           add: 'paper.pdf'
           default_author: github_actions
+          github_token: ${{ secrets.GITHUB_TOKEN }}
