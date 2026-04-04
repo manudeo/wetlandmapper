@@ -487,4 +487,11 @@ def compute_water_indices(
         nir_band=nir_band,
         swir_band=swir_band,
     )
-    return xr.Dataset({"MNDWI": mndwi, "NDWI": ndwi, "AWEIsh": aweish, "AWEInsh": aweinsh})
+    return xr.Dataset(
+        {
+            "MNDWI": mndwi,
+            "NDWI": ndwi,
+            "AWEIsh": aweish,
+            "AWEInsh": aweinsh,
+        }
+    )

@@ -36,19 +36,19 @@ from .dynamics import (
     compute_wet_frequency,
 )
 from .indices import (
+    compute_aweinsh,
+    compute_aweish,
     compute_indices,
     compute_mndwi,
-    compute_ndwi,
     compute_ndti,
     compute_ndvi,
-    compute_aweish,
-    compute_aweinsh,
+    compute_ndwi,
     compute_water_indices,
 )
 from .terrain import (
+    compute_local_range,
     compute_slope,
     compute_tpi,
-    compute_local_range,
     mask_terrain_artifacts,
 )
 from .wct import (

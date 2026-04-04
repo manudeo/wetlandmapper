@@ -62,7 +62,6 @@ def mndwi_mixed():
       BL (bottom-left)  : wet only in historic half → should be Lost
       BR (bottom-right) : always dry → should be Non-wetland (0)
     """
-    rng = np.random.default_rng(42)
     data = np.full((N_TIMES, NY, NX), -0.5)
 
     half = N_TIMES // 2

@@ -44,8 +44,6 @@ the ``dem_mask`` parameter of :func:`wetlandmapper.gee.fetch`.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import xarray as xr
 
@@ -129,7 +127,9 @@ def compute_slope(
     x_coords = dem[x_dim].values
 
     if y_coords.size < 2 or x_coords.size < 2:
-        raise ValueError("DEM must contain at least two values in each spatial dimension.")
+        raise ValueError(
+            "DEM must contain at least two values in each spatial dimension."
+        )
 
     elev = dem.values.astype(float)
     dy_m = abs(float(np.mean(np.diff(y_coords)))) * 111_320.0
@@ -318,9 +318,13 @@ def mask_terrain_artifacts(
         )
     _check_dem(dem)
 
-    if max_local_range is not None and (not isinstance(local_range_window, int) or local_range_window < 3):
+    if max_local_range is not None and (
+        not isinstance(local_range_window, int) or local_range_window < 3
+    ):
         raise ValueError("local_range_window must be an integer >= 3.")
-    if max_tpi is not None and (not isinstance(tpi_window, int) or tpi_window < 3):
+    if max_tpi is not None and (
+        not isinstance(tpi_window, int) or tpi_window < 3
+    ):
         raise ValueError("tpi_window must be an integer >= 3.")
 
     terrain_mask = xr.ones_like(dem, dtype=bool)
@@ -329,9 +333,13 @@ def mask_terrain_artifacts(
     if max_slope is not None:
         terrain_mask = terrain_mask & (compute_slope(dem) <= max_slope)
     if max_tpi is not None:
-        terrain_mask = terrain_mask & (compute_tpi(dem, window=tpi_window).abs() <= max_tpi)
+        tpi_result = compute_tpi(dem, window=tpi_window).abs() <= max_tpi
+        terrain_mask = terrain_mask & tpi_result
     if max_local_range is not None:
-        terrain_mask = terrain_mask & (compute_local_range(dem, window=local_range_window) <= max_local_range)
+        lr_result = compute_local_range(
+            dem, window=local_range_window
+        ) <= max_local_range
+        terrain_mask = terrain_mask & lr_result
 
     if invert:
         terrain_mask = ~terrain_mask
