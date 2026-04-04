@@ -289,8 +289,8 @@ the repository.
 
 # Validation and Results
 
-The dynamics module is derived from @singh2022basin, where the frequency-based 
-temporal aggregation method demonstrated that frequency-based temporal aggregation can effectively
+The dynamics module is derived from @singh2022basin, where the frequency-based
+temporal aggregation method can effectively
 distinguish permanently inundated, seasonally active, and recently changed wetlands at
 basin scale, providing a validated inventory framework applicable to wetland restoration
 prioritisation [@singh2022integrating].
