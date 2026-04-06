@@ -1102,7 +1102,7 @@ def fetch(
         DataArray with dims ``(time, y, x)`` when a single index is requested.
     xr.Dataset
         Dataset with one variable per index, dims ``(time, y, x)``.
-        
+
     Notes
     -----
     Time steps where no valid cloud-free pixels exist are skipped with a
@@ -1176,7 +1176,7 @@ def fetch(
                    .copyProperties(img, ["system:time_start"])
             )
         )
-        collection = raw.map(lambda img: _add_indices(img, bm))    
+        collection = raw.map(lambda img: _add_indices(img, bm))
     else:
         collection, _ = _build_single_sensor_collection(
             sensor, ee_geom, start, end, max_cloud_cover, use_slc_off
@@ -1195,7 +1195,7 @@ def fetch(
         )
         collection = collection.map(
             lambda img: img.updateMask(terrain_mask)
-        )            
+        )
 
     # Keep only requested index bands
     collection = collection.select(indices_list)
