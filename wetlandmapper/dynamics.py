@@ -104,6 +104,7 @@ def classify_dynamics(
     thresholdWet: float = 25.0,
     thresholdPersis: float = 75.0,
     water_threshold: float = 0.0,
+    mndwi_threshold: float | None = None,   # deprecated alias
 ) -> xr.DataArray:
     """Classify wetland pixels into six temporal dynamics classes.
 
@@ -186,6 +187,13 @@ def classify_dynamics(
             "Input 'water_index' must have a 'time' dimension. "
             f"Found dimensions: {water_index.dims}"
         )
+    if mndwi_threshold is not None:
+        import warnings
+        warnings.warn(
+            "mndwi_threshold is deprecated; use water_threshold instead.",
+            DeprecationWarning, stacklevel=2
+        )
+        water_threshold = mndwi_threshold
     n_time = len(water_index.time)
     if nYear * 2 > n_time:
         raise ValueError(
@@ -311,6 +319,7 @@ def classify_dynamics(
 def compute_wet_frequency(
     water_index: xr.DataArray,
     water_threshold: float = 0.0,
+    mndwi_threshold: float | None = None,   # deprecated alias
 ) -> xr.DataArray:
     """Return the pixel-wise wet frequency (%) across the full time series.
 
@@ -326,6 +335,13 @@ def compute_wet_frequency(
     xr.DataArray
         Wet frequency in percent (0–100).
     """
+    if mndwi_threshold is not None:
+        import warnings
+        warnings.warn(
+            "mndwi_threshold is deprecated; use water_threshold instead.",
+            DeprecationWarning, stacklevel=2
+        )
+        water_threshold = mndwi_threshold
     water_binary = xr.where(water_index > water_threshold, 1, 0)
     freq = (water_binary.sum(dim="time") / len(water_index.time)) * 100
     freq.name = "wet_frequency_pct"
