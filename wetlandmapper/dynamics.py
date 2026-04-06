@@ -47,8 +47,6 @@ Notes
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import xarray as xr
 
