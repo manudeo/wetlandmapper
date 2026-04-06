@@ -26,7 +26,11 @@ Functions
 - compute_aweish()     : Single AWEIsh computation
 - compute_aweinsh()    : Single AWEInsh computation
 - compute_indices()    : MNDWI, NDVI, NDTI (+ optionally AWEIsh, AWEInsh for WCT)
-- compute_water_indices() : All water indices (MNDWI, NDWI, AWEIsh, AWEInsh)"""
+- compute_water_indices() : All water indices (MNDWI, NDWI, AWEIsh, AWEInsh)
+MNDWI is recommended for most wetland applications.
+AWEIsh and AWEInsh may perform better in areas with strong topographic
+shadow (mountains, deep valleys) or confusion with built-up surfaces.
+"""
 
 from __future__ import annotations
 
@@ -43,6 +47,13 @@ __all__ = [
     "compute_indices",
     "compute_water_indices",
 ]
+
+_FEYISA_REF = (
+    "Feyisa et al. (2014). Automated Water Extraction Index: "
+    "A new technique for surface water mapping using Landsat imagery. "
+    "Remote Sensing of Environment, 140, 23-35. "
+    "https://doi.org/10.1016/j.rse.2013.08.029"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +316,13 @@ def compute_aweish(
     DN values and includes a 0.0001 scaling factor. This implementation
     operates on surface reflectance already scaled to [0, 1], so the
     constant is omitted.
+    
+    References
+    ----------
+    Feyisa, G. L., Meilby, H., Fensholt, R., & Proud, S. R. (2014).
+    Automated Water Extraction Index: A new technique for surface water
+    mapping using Landsat imagery. Remote Sensing of Environment, 140,
+    23-35. https://doi.org/10.1016/j.rse.2013.08.029
     """
     blue = _get_band(ds, blue_band)
     green = _get_band(ds, green_band)
@@ -316,6 +334,7 @@ def compute_aweish(
     aweish.attrs.update(
         long_name="Automated Water Extraction Index (with shadow suppression)",
         water_threshold=0.0,
+        references=_FEYISA_REF,
     )
     return aweish
 
@@ -350,6 +369,17 @@ def compute_aweinsh(
     -------
     xr.DataArray
         AWEInsh values. A threshold of 0.0 separates water from non-water.
+    
+    Notes
+    -----
+    The 0.0001 DN scaling factor from the original paper is omitted here
+    because this function expects surface reflectance in [0, 1].
+
+    References
+    ----------
+    Feyisa, G. L., Meilby, H., Fensholt, R., & Proud, S. R. (2014).
+    Remote Sensing of Environment, 140, 23-35.
+    https://doi.org/10.1016/j.rse.2013.08.029
     """
     green = _get_band(ds, green_band)
     nir = _get_band(ds, nir_band)
@@ -359,6 +389,7 @@ def compute_aweinsh(
     aweinsh.attrs.update(
         long_name="Automated Water Extraction Index (no shadow suppression)",
         water_threshold=0.0,
+        references=_FEYISA_REF,
     )
     return aweinsh
 
@@ -401,6 +432,20 @@ def compute_indices(
     xr.Dataset
         Dataset with variables ``MNDWI``, ``NDVI``, ``NDTI`` (always),
         and optionally ``AWEIsh``, ``AWEInsh``.
+
+    Examples
+    --------
+    Standard WCT workflow:
+
+    >>> indices = compute_indices(ds, green_band="B3", red_band="B4",
+    ...                           nir_band="B5", swir_band="B6")
+
+    Including AWEI for shadow-affected scenes:
+
+    >>> indices = compute_indices(ds, green_band="B3", red_band="B4",
+    ...                           nir_band="B5", swir_band="B6",
+    ...                           swir2_band="B7", blue_band="B2",
+    ...                           include_awei=True)
     """
     mndwi = compute_mndwi(ds, green_band=green_band, swir_band=swir_band)
     ndvi = compute_ndvi(ds, nir_band=nir_band, red_band=red_band)

@@ -32,19 +32,20 @@ Both functions accept a ``temporal_aggregation`` parameter:
 
 Sensors and date coverage
 ------------------------------------
-+-------------+---------------------+---------------------------+--------------------+
-| sensor=     | GEE collection      | Operational dates         | Band family        |
-+-------------+---------------------+---------------------------+--------------------+
-| "Landsat4"  | LT04/C02/T1_L2      | 1982-08-22 – 1993-12-14   | TM (SR_B1–B5,B7)   |
-| "Landsat5"  | LT05/C02/T1_L2      | 1984-03-16 – 2013-06-05   | TM (SR_B1–B5,B7)   |
-| "Landsat7"  | LE07/C02/T1_L2      | 1999-04-15 – 2022-04-06   | ETM+ (SR_B1–B5,B7) |
-|             |                     |   SLC failure: 2003-06-01  | use_slc_off=False  |
-| "Landsat8"  | LC08/C02/T1_L2      | 2013-04-11 – present       | OLI (SR_B2–B7)     |
-| "Landsat9"  | LC09/C02/T1_L2      | 2021-10-31 – present       | OLI-2 (SR_B2–B7)   |
-| "LandsatAll"| merged above        | 1982 – present             | auto-harmonised    |
-| "Sentinel2" | S2_SR_HARMONIZED    | 2015-06-27 – present       | MSI (B2–B12)       |
-| "MODIS_Terra"| MOD09A1             | 2000-02-24 – present       | MODIS (500m)       |
-| "MODIS_Aqua" | MYD09A1             | 2002-07-04 – present       | MODIS (500m)       |
++--------------+---------------------+---------------------------+--------------------+
+| sensor=      | GEE collection      | Operational dates         | Band family        |
++--------------+---------------------+---------------------------+--------------------+
+| "Landsat4"   | LT04/C02/T1_L2      | 1982-08-22 – 1993-12-14   | TM (SR_B1–B5,B7)   |
+| "Landsat5"   | LT05/C02/T1_L2      | 1984-03-16 – 2013-06-05   | TM (SR_B1–B5,B7)   |
+| "Landsat7"   | LE07/C02/T1_L2      | 1999-04-15 – 2022-04-06   | ETM+ (SR_B1–B5,B7) |
+|              |                     |   SLC failure: 2003-06-01 | use_slc_off=False  |
+| "Landsat8"   | LC08/C02/T1_L2      | 2013-04-11 – present      | OLI (SR_B2–B7)     |
+| "Landsat9"   | LC09/C02/T1_L2      | 2021-10-31 – present      | OLI-2 (SR_B2–B7)   |
+| "LandsatAll" | merged above        | 1982 – present            | auto-harmonised    |
+| "Sentinel2"  | S2_SR_HARMONIZED    | 2015-06-27 – present      | MSI (B2–B12)       |
+| "MODIS_Terra"| MOD09A1             | 2000-02-24 – present      | MODIS (500m)       |
+| "MODIS_Aqua" | MYD09A1             | 2002-07-04 – present      | MODIS (500m)       |
+| "MODISAll"   | merged MODIS        | 2002-07-04 – present      | MODIS (500m)       |
 +-------------+---------------------+---------------------------+--------------------+
 
 ``"Landsat"`` is an alias for ``"Landsat8"`` for backward compatibility.
@@ -153,12 +154,12 @@ _BAND_MAP: dict[str, dict[str, str]] = {
     # MODIS Terra/Aqua MOD09A1 / MYD09A1 (8-day 500m surface reflectance)
     # Scale: multiply by 0.0001 (stored as int16, range -100 to 16000)
     "MODIS_500m": {
-        "blue": "sur_refl_b03",
-        "green": "sur_refl_b04",
-        "red": "sur_refl_b01",
-        "nir": "sur_refl_b02",
-        "swir": "sur_refl_b06",
-        "swir2": "sur_refl_b07",
+        "blue": "sur_refl_b03",   # 459-479 nm
+        "green": "sur_refl_b04",  # 545-565 nm
+        "red": "sur_refl_b01",    # 620-670 nm
+        "nir": "sur_refl_b02",    # 841-876 nm
+        "swir": "sur_refl_b06",   # SWIR1 1628-1652 nm
+        "swir2": "sur_refl_b07",  # SWIR2 2105-2155 nm
         "qa": "StateQA",
     },
     # Common renamed bands used internally after harmonising LandsatAll
@@ -335,7 +336,33 @@ def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
     mndwi = image.normalizedDifference([bands["green"], bands["swir"]]).rename("MNDWI")
     ndvi = image.normalizedDifference([bands["nir"], bands["red"]]).rename("NDVI")
     ndti = image.normalizedDifference([bands["red"], bands["green"]]).rename("NDTI")
-    return image.addBands([mndwi, ndvi, ndti])
+    # AWEIsh = Blue + 2.5*Green - 1.5*(NIR + SWIR1) - 0.25*SWIR2
+    # Note: Landsat C02 L2 reflectance is already scaled (0.0000275*DN - 0.2);
+    # the 0.0001 constant from the original Feyisa et al. (2014) formula is omitted.
+    aweish = (
+        image.select(bands["blue"])
+        .add(image.select(bands["green"]).multiply(2.5))
+        .subtract(
+            image.select(bands["nir"])
+                 .add(image.select(bands["swir"]))
+                 .multiply(1.5)
+        )
+        .subtract(image.select(bands["swir2"]).multiply(0.25))
+        .rename("AWEIsh")
+    )
+    # AWEInsh = 4*(Green - SWIR1) - (0.25*NIR + 2.75*SWIR1)
+    aweinsh = (
+        image.select(bands["green"])
+        .subtract(image.select(bands["swir"]))
+        .multiply(4.0)
+        .subtract(
+            image.select(bands["nir"]).multiply(0.25)
+            .add(image.select(bands["swir"]).multiply(2.75))
+        )
+        .rename("AWEInsh")
+    )
+    return image.addBands([mndwi, ndvi, ndti, aweish, aweinsh])
+
 
 
 # ---------------------------------------------------------------------------
@@ -857,6 +884,84 @@ def _ee_image_to_dataarray(
             pass
 
 
+def _build_dem_mask(
+    ee_geom: "ee.Geometry",
+    max_slope_deg: float | None = 5.0,
+    max_tpi_m: float | None = None,
+    tpi_window_px: int = 5,
+    max_local_range_m: float | None = None,
+    local_range_window_px: int = 5,
+    max_elevation_m: float | None = None,
+) -> "ee.Image":
+    """Build a server-side terrain flatness mask using Copernicus GLO-30 DEM.
+
+    Returns a binary mask image (1 = valid flat terrain, 0 = steep/high).
+    Used by :func:`fetch` when ``dem_mask=True`` to suppress glacier and
+    snowpack artefacts server-side before download.
+
+    Parameters
+    ----------
+    ee_geom : ee.Geometry
+        Area of interest for DEM loading.
+    max_slope_deg : float or None
+        Maximum slope in degrees.  Pixels steeper than this are masked.
+        Default 5.0.
+    max_tpi_m : float or None
+        Maximum absolute TPI (metres).  Uses a focal mean kernel.
+        Default None (disabled).
+    tpi_window_px : int
+        Kernel radius in pixels for TPI focal mean. Default 5.
+    max_local_range_m : float or None
+        Maximum local elevation range (metres). Default None (disabled).
+    local_range_window_px : int
+        Kernel radius for local range. Default 5.
+    max_elevation_m : float or None
+        Absolute elevation ceiling (metres).  Pixels above this are
+        always masked. Default None (disabled).
+
+    Returns
+    -------
+    ee.Image
+        Single-band mask: 1 = valid terrain, 0 = artefact.
+    """
+    dem = (
+        ee.ImageCollection("COPERNICUS/DEM/GLO30")
+        .filterBounds(ee_geom)
+        .select("DEM")
+        .mean()
+    )
+
+    mask = ee.Image.constant(1)
+
+    # ── Absolute elevation ceiling ──────────────────────────────────────────
+    if max_elevation_m is not None:
+        mask = mask.And(dem.lte(max_elevation_m))
+
+    # ── Slope ───────────────────────────────────────────────────────────────
+    if max_slope_deg is not None:
+        slope = ee.Terrain.slope(dem)
+        mask = mask.And(slope.lte(max_slope_deg))
+
+    # ── TPI ─────────────────────────────────────────────────────────────────
+    if max_tpi_m is not None:
+        kernel    = ee.Kernel.square(tpi_window_px, "pixels")
+        focal_mean = dem.reduceNeighborhood(
+            reducer=ee.Reducer.mean(), kernel=kernel
+        )
+        tpi = dem.subtract(focal_mean).abs()
+        mask = mask.And(tpi.lte(max_tpi_m))
+
+    # ── Local elevation range ────────────────────────────────────────────────
+    if max_local_range_m is not None:
+        kernel    = ee.Kernel.square(local_range_window_px, "pixels")
+        local_max = dem.reduceNeighborhood(ee.Reducer.max(), kernel)
+        local_min = dem.reduceNeighborhood(ee.Reducer.min(), kernel)
+        local_rng = local_max.subtract(local_min)
+        mask = mask.And(local_rng.lte(max_local_range_m))
+
+    return mask.rename("terrain_mask")
+
+
 # ---------------------------------------------------------------------------
 # Public API: fetch()
 # ---------------------------------------------------------------------------
@@ -872,8 +977,20 @@ def fetch(
     max_cloud_cover: float = 20.0,
     temporal_aggregation: str = "all",
     use_slc_off: bool = False,
-    dem_mask: dict | None = None,
     project: str | None = None,
+    climate_adaptive: bool = False,
+    min_precip_mm: float = 20.0,
+    min_temp_c: float = 5.0,
+    hydroperiod_months: int = 1,
+    wetness_index: str = "MNDWI",
+    wetness_threshold: float = 0.0,
+    dem_mask: bool = False,
+    max_slope_deg: float | None = 5.0,
+    max_tpi_m: float | None = None,
+    tpi_window_px: int = 5,
+    max_local_range_m: float | None = None,
+    local_range_window_px: int = 5,
+    max_elevation_m: float | None = None,
 ) -> "xr.DataArray | xr.Dataset":
     """Retrieve spectral indices from GEE as an xarray object (immediate download).
 
@@ -915,20 +1032,69 @@ def fetch(
         Include Landsat 7 SLC-off images (acquired after 2003-05-31)?
         Default ``False``.  Only relevant when ``sensor`` is ``"Landsat7"``
         or ``"LandsatAll"``.
-    dem_mask : dict or None
-        Server-side DEM masking using Copernicus GLO-30. Applied via
-        ``ee.Terrain.slope()`` and ``reduceNeighborhood`` to avoid downloading
-        the DEM. Dict with keys:
-
-        - ``"max_slope"`` (float): Maximum slope in degrees (default 5.0)
-        - ``"max_elevation_m"`` (float): Absolute elevation ceiling in metres
-        - ``"min_temp_c"`` (float): Minimum temperature (°C) for climate-adaptive
-          masking (removes cold months where precipitation is frozen)
-        - ``"window_size"`` (int): Window size for terrain analysis (default 5)
-
-        Set to ``None`` (default) to disable DEM masking.
     project : str, optional
         GEE cloud project ID.
+    climate_adaptive : bool
+        If ``True``, replace the standard temporal composite with a
+        climate-adaptive annual composite guided by ERA5-Land precipitation
+        and temperature. When enabled, ``temporal_aggregation`` is ignored
+        (output is always one image per year). Default ``False``.
+
+        The algorithm:
+
+        1. Builds monthly Landsat composites internally.
+        2. Joins with ERA5-Land monthly precipitation and 2m temperature.
+        3. Filters months where precip >= ``min_precip_mm`` AND
+           temp >= ``min_temp_c`` (excludes dry season and snow months).
+        4. For each year, selects per-pixel values from the month with
+           peak precipitation using ``qualityMosaic`` (captures maximum
+           wetness rather than an arbitrary median).
+        5. Masks pixels wet for fewer than ``hydroperiod_months`` months
+           per year on average (removes transient waterlogging).
+
+    min_precip_mm : float
+        Minimum monthly precipitation (mm) to include a month in the
+        composite window. Used only when ``climate_adaptive=True``.
+        Default 20 mm.
+    min_temp_c : float
+        Minimum monthly mean 2m temperature (degrees C) to include a
+        month. Excludes frozen-ground and snow months. Used only when
+        ``climate_adaptive=True``. Default 5 degrees C.
+    hydroperiod_months : int
+        Minimum number of months per year a pixel must be wet (index
+        above ``wetness_threshold``) on average across the full record
+        to be retained. Pixels below this are masked as transient
+        waterlogging. Used only when ``climate_adaptive=True``.
+        Default 1. Increase to 2-3 for stricter wetland delineation.
+    wetness_index : str
+        Which index band to use as the wetness indicator for hydroperiod
+        counting and qualityMosaic selection. Must be one of the bands
+        in ``index``. Default ``"MNDWI"``.
+    wetness_threshold : float
+        Index value above which a pixel is counted as wet for the
+        hydroperiod calculation. Default 0.0.
+    dem_mask : bool
+        If ``True``, apply a server-side terrain flatness mask using the
+        Copernicus GLO-30 DEM before compositing. Masks out glaciers,
+        snowpacks, and steep mountain terrain that produce false wetness
+        signals. Default ``False``.
+    max_slope_deg : float or None
+        Maximum terrain slope (degrees) to retain when ``dem_mask=True``.
+        Default 5.0. Set to ``None`` to disable slope filtering.
+    max_tpi_m : float or None
+        Maximum absolute TPI (metres) when ``dem_mask=True``.
+        Default ``None`` (disabled).
+    tpi_window_px : int
+        Focal window radius in pixels for TPI. Default 5.
+    max_local_range_m : float or None
+        Maximum local elevation range (metres) in the rolling window
+        when ``dem_mask=True``. Default ``None`` (disabled).
+    local_range_window_px : int
+        Window radius for local elevation range. Default 5.
+    max_elevation_m : float or None
+        Absolute elevation ceiling (metres). Pixels above this elevation
+        are always masked when ``dem_mask=True``. Default ``None``.
+
 
     Returns
     -------
@@ -981,9 +1147,12 @@ def fetch(
     sensor = _resolve_sensor(sensor)
 
     indices_list = [index] if isinstance(index, str) else list(index)
-    bad = set(indices_list) - {"MNDWI", "NDVI", "NDTI"}
+    _VALID_INDICES = {"MNDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
+    bad = set(indices_list) - _VALID_INDICES
     if bad:
-        raise ValueError(f"Unknown index/indices: {bad}. Valid: MNDWI, NDVI, NDTI")
+        raise ValueError(
+            f"Unknown index/indices: {bad}. Valid: {_VALID_INDICES}"
+        )   
 
     ee_geom = _parse_aoi(aoi)
 
@@ -992,15 +1161,64 @@ def fetch(
         collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
     elif sensor == "MODISAll":
         collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
+    elif sensor in ("MODIS_Terra", "MODIS_Aqua"):
+        bm = _BAND_MAP["MODIS_500m"]
+        sf = _SCALE_FACTOR["MODIS_500m"]
+        raw = (
+            ee.ImageCollection(_COLLECTION_ID[sensor])
+            .filterBounds(ee_geom)
+            .filterDate(start, end)
+        )
+        raw = raw.map(_mask_modis_clouds)
+        raw = raw.map(
+            lambda img: (
+                img.multiply(sf["scale"])
+                   .copyProperties(img, ["system:time_start"])
+            )
+        )
+        collection = raw.map(lambda img: _add_indices(img, bm))
+    
     else:
         collection, _ = _build_single_sensor_collection(
             sensor, ee_geom, start, end, max_cloud_cover, use_slc_off
         )
 
+    # ── Server-side DEM terrain mask ────────────────────────────────────────
+    if dem_mask:
+        terrain_mask = _build_dem_mask(
+            ee_geom,
+            max_slope_deg=max_slope_deg,
+            max_tpi_m=max_tpi_m,
+            tpi_window_px=tpi_window_px,
+            max_local_range_m=max_local_range_m,
+            local_range_window_px=local_range_window_px,
+            max_elevation_m=max_elevation_m,
+        )
+        collection = collection.map(
+            lambda img: img.updateMask(terrain_mask)
+        )
+            
     # Keep only requested index bands
     collection = collection.select(indices_list)
 
     # Server-side temporal compositing
+    if climate_adaptive:
+        # Monthly composites first (needed as input to climate-adaptive fn)
+        monthly = _build_composites(
+            collection, "monthly", start, end, indices_list
+        )
+        collection = _build_climate_adaptive_composites(
+            monthly,
+            start=start,
+            end=end,
+            index_bands=indices_list,
+            wetness_index=wetness_index,
+            wetness_threshold=wetness_threshold,
+            min_precip_mm=min_precip_mm,
+            min_temp_c=min_temp_c,
+            hydroperiod_months=hydroperiod_months,
+        )
+    else:        
     collection = _build_composites(
         collection, temporal_aggregation, start, end, indices_list
     )
@@ -1074,7 +1292,6 @@ def fetch(
 # Public API: fetch_xee()
 # ---------------------------------------------------------------------------
 
-
 def fetch_xee(
     aoi: "dict | str",
     start: str,
@@ -1085,7 +1302,6 @@ def fetch_xee(
     max_cloud_cover: float = 20.0,
     temporal_aggregation: str = "all",
     use_slc_off: bool = False,
-    dem_mask: dict | None = None,
     project: str | None = None,
     chunks: dict | None = None,
 ) -> "xr.DataArray | xr.Dataset":
@@ -1118,9 +1334,6 @@ def fetch_xee(
         recommended to limit the number of lazy time steps.
     use_slc_off : bool
         Include Landsat 7 SLC-off images?  Default ``False``.
-    dem_mask : dict or None
-        Server-side DEM masking using Copernicus GLO-30. See :func:`fetch`
-        for parameter details. Default ``None`` (disabled).
     project : str, optional
         GEE cloud project ID.
     chunks : dict, optional
@@ -1176,7 +1389,8 @@ def fetch_xee(
         import dask  # noqa: F401
     except ImportError:
         raise ImportError(
-            "dask is required for fetch_xee(). " "Install:  pip install dask"
+            "dask is required for fetch_xee(). " 
+            "Install:  pip install dask"
         )
 
     if temporal_aggregation not in _VALID_AGGREGATIONS:
@@ -1255,7 +1469,6 @@ def fetch_xee(
 # Dependency guard
 # ---------------------------------------------------------------------------
 
-
 def _require_ee() -> None:
     if not _HAS_EE:
         raise ImportError(
@@ -1263,3 +1476,253 @@ def _require_ee() -> None:
             "Install:  pip install 'wetlandmapper[gee]'\n"
             "Auth:     earthengine authenticate"
         )
+
+
+# ---------------------------------------------------------------------------
+# Climate-adaptive annual compositing (ERA5-Land guided)
+# ---------------------------------------------------------------------------
+
+def _build_climate_adaptive_composites(
+    collection: "ee.ImageCollection",
+    start: str,
+    end: str,
+    index_bands: list[str],
+    wetness_index: str = "MNDWI",
+    wetness_threshold: float = 0.0,
+    min_precip_mm: float = 20.0,
+    min_temp_c: float = 5.0,
+    hydroperiod_months: int = 1,
+) -> "ee.ImageCollection":
+    """Build climate-adaptive annual composites guided by ERA5-Land.
+
+    This function addresses two limitations of a naive annual median:
+
+    1. **Season selection**: Instead of compositing all months equally,
+       it identifies for each year the month with peak precipitation that
+       also meets minimum temperature and rainfall thresholds. Using
+       ``qualityMosaic`` on precipitation selects, per pixel, the index
+       value from the wettest climatically-valid month. This avoids
+       selecting snow-covered or drought-period images as representative
+       of annual wetness.
+
+    2. **Hydroperiod filtering**: Transient waterlogging (e.g. flooded
+       fields after a storm) produces a water signal for only one or two
+       months per year. A true wetland is inundated for a sustained period.
+       Pixels that are wet during fewer than ``hydroperiod_months`` months
+       per year on average across the full record are masked out.
+
+    Parameters
+    ----------
+    collection : ee.ImageCollection
+        Pre-processed monthly composite collection with index bands
+        (e.g. MNDWI, NDVI, NDTI) already computed server-side.
+        Should be a monthly composite (``temporal_aggregation="monthly"``
+        applied upstream).
+    start, end : str
+        ISO 8601 date strings for the full requested range.
+    index_bands : list of str
+        Band names to composite (e.g. ``["MNDWI"]``).
+    wetness_index : str
+        Which band to use as the wetness indicator for both the
+        ``qualityMosaic`` quality band and the hydroperiod count.
+        Default ``"MNDWI"``. Can also be ``"AWEIsh"`` or ``"AWEInsh"``
+        if those bands were computed server-side.
+    wetness_threshold : float
+        Index value above which a pixel is considered wet for the
+        hydroperiod count. Default 0.0 (standard MNDWI water threshold).
+    min_precip_mm : float
+        Minimum monthly total precipitation (mm) for a month to be
+        included in the composite window. Months drier than this are
+        skipped (dry season filter). Default 20 mm.
+    min_temp_c : float
+        Minimum monthly mean 2m air temperature (degrees C) for a month
+        to be included. Months colder than this are skipped (snow/ice
+        filter). Default 5 degrees C. ERA5-Land temperature is in Kelvin
+        internally; this parameter is in Celsius for user convenience.
+    hydroperiod_months : int
+        Minimum number of months per year (on average across the full
+        record) that a pixel must be wet to be retained as a wetland
+        pixel. Pixels below this threshold are masked — they represent
+        transient waterlogging rather than persistent wetland. Default 1.
+        Increase to 2 or 3 for stricter wetland delineation.
+
+    Returns
+    -------
+    ee.ImageCollection
+        One image per year, ``system:time_start`` set to July 1 of each
+        year. Pixels failing the hydroperiod test are masked in all images.
+
+    Notes
+    -----
+    ERA5-Land data
+        - Collection: ``ECMWF/ERA5_LAND/MONTHLY_AGGR``
+        - ``total_precipitation_sum``: monthly total precipitation in
+          metres (multiplied by 1000 to convert to mm).
+        - ``temperature_2m``: monthly mean 2m air temperature in Kelvin
+          (273.15 subtracted to convert to degrees C).
+        - Available from 1950-01-01 to near-present at 0.1 degree
+          (~11 km) resolution; GEE resamples to the Landsat grid.
+
+    Snow exclusion
+        ERA5-Land ``total_precipitation_sum`` includes both rainfall and
+        snowfall. The ``min_temp_c`` filter effectively excludes months
+        where precipitation falls primarily as snow, without requiring a
+        separate snowfall band.
+
+    Hydroperiod vs wet_percent_threshold
+        The ``hydroperiod_months`` parameter operates at monthly
+        resolution and is applied during data acquisition. The
+        ``thresholdWet`` parameter in :func:`classify_dynamics` operates
+        at annual-composite resolution and is applied during
+        classification. Both can be used together for a two-stage filter.
+
+    Examples
+    --------
+    Dryland application with strict hydroperiod:
+
+    >>> mndwi = fetch(
+    ...     aoi, "1984-01-01", "2023-12-31",
+    ...     sensor="LandsatAll",
+    ...     climate_adaptive=True,
+    ...     min_precip_mm=25.0,   # wet season only
+    ...     min_temp_c=10.0,      # exclude cold months
+    ...     hydroperiod_months=2, # at least 2 wet months/year
+    ... )
+
+    Temperate wetland (less strict):
+
+    >>> mndwi = fetch(
+    ...     aoi, "2000-01-01", "2023-12-31",
+    ...     sensor="LandsatAll",
+    ...     climate_adaptive=True,
+    ...     min_precip_mm=10.0,
+    ...     min_temp_c=2.0,
+    ...     hydroperiod_months=1,
+    ... )
+    """
+    start_yr = datetime.date.fromisoformat(start[:10]).year
+    end_yr   = datetime.date.fromisoformat(end[:10]).year
+
+    # ── ERA5-Land monthly climate data ──────────────────────────────────────
+    # Convert units server-side:
+    #   precipitation: m -> mm  (*1000)
+    #   temperature:   K -> C   (-273.15)
+    era5 = (
+        ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+        .filterDate(start, end)
+        .select(
+            ["total_precipitation_sum", "temperature_2m"],
+            ["precip_m",               "temp_k"],
+        )
+    )
+
+    # Add year, month, and precip_mm / temp_c as image properties + bands
+    def _prepare_era5(img):
+        date    = img.date()
+        yr      = date.get("year")
+        mo      = date.get("month")
+        precip  = img.select("precip_m").multiply(1000)   # m -> mm
+        temp    = img.select("temp_k").subtract(273.15)   # K -> C
+        return (
+            img
+            .addBands(precip.rename("precip_mm"))
+            .addBands(temp.rename("temp_c"))
+            .set("year", yr)
+            .set("month", mo)
+            .set("ym", ee.String(yr).cat("_").cat(
+                ee.Number(mo).format("%02d")))
+        )
+
+    era5 = era5.map(_prepare_era5)
+
+    # ── Add year/month labels to the Landsat monthly composites ─────────────
+    def _label_landsat(img):
+        date = img.date()
+        yr   = date.get("year")
+        mo   = date.get("month")
+        return img.set(
+            "year",  yr,
+            "month", mo,
+            "ym",    ee.String(yr).cat("_").cat(
+                ee.Number(mo).format("%02d")),
+        )
+
+    collection = collection.map(_label_landsat)
+
+    # ── Inner join on year-month string ─────────────────────────────────────
+    join_filter  = ee.Filter.equals(leftField="ym", rightField="ym")
+    inner_join   = ee.Join.inner("landsat", "era5")
+    joined       = inner_join.apply(collection, era5, join_filter)
+
+    # Merge each pair into one image carrying both Landsat indices and
+    # climate bands, then apply climate filters
+    def _merge_pair(feature):
+        ls  = ee.Image(feature.get("landsat"))
+        clm = ee.Image(feature.get("era5"))
+        return (
+            ee.Image.cat(ls, clm.select(["precip_mm", "temp_c"]))
+            .copyProperties(ls, ls.propertyNames())
+        )
+
+    joined_col = ee.ImageCollection(joined.map(_merge_pair))
+
+    # Filter to climate-valid months: warm enough AND wet enough
+    climate_valid = joined_col.filter(
+        ee.Filter.And(
+            ee.Filter.gte("precip_mm", min_precip_mm),  # server-side property?
+            # Property-level filter won't work for raster values;
+            # use a pixel-level mask instead (applied per image below)
+        )
+    )
+
+    # Apply pixel-level climate mask (ERA5 at ~11 km resamples to Landsat grid)
+    def _apply_climate_mask(img):
+        precip_ok = img.select("precip_mm").gte(min_precip_mm)
+        temp_ok   = img.select("temp_c").gte(min_temp_c)
+        valid     = precip_ok.And(temp_ok)
+        return img.updateMask(valid).copyProperties(img, img.propertyNames())
+
+    climate_valid = joined_col.map(_apply_climate_mask)
+
+    # ── Hydroperiod mask ─────────────────────────────────────────────────────
+    # For each year, count how many climate-valid months each pixel is wet.
+    # Average across years. Mask pixels below hydroperiod_months.
+    years = ee.List.sequence(start_yr, end_yr)
+
+    def _wet_months_in_year(yr):
+        yr_col  = climate_valid.filter(ee.Filter.eq("year", yr))
+        wet_col = yr_col.map(
+            lambda img: img.select(wetness_index)
+                           .gt(wetness_threshold)
+                           .rename("wet")
+                           .unmask(0)
+        )
+        return wet_col.sum().rename("wet_months")
+
+    wet_per_year  = ee.ImageCollection(years.map(_wet_months_in_year))
+    mean_wet_mths = wet_per_year.mean()
+    hydro_mask    = mean_wet_mths.gte(hydroperiod_months)
+
+    # ── Per-year best-month composite via qualityMosaic on precipitation ────
+    # qualityMosaic picks, per pixel, the values from the image with the
+    # highest value of the quality band (here: precip_mm). This selects the
+    # index values from the wettest climate-valid month of each year.
+    def _annual_composite(yr):
+        yr_col = climate_valid.filter(ee.Filter.eq("year", yr))
+        # qualityMosaic on precip_mm: highest precipitation month wins
+        composite = yr_col.qualityMosaic("precip_mm")
+        # Keep only the requested index bands
+        composite = (
+            composite.select(index_bands)
+                     .updateMask(hydro_mask)        # apply hydroperiod mask
+                     .set("system:time_start",
+                          ee.Date.fromYMD(yr, 7, 1).millis())
+                     .set("year", yr)
+        )
+        fallback = _make_nan_image(index_bands, ee.Date.fromYMD(yr, 7, 1).millis())
+        return ee.Image(
+            ee.Algorithms.If(yr_col.size().gt(0), composite, fallback)
+        )
+
+    images = years.map(_annual_composite)
+    return ee.ImageCollection(images)
