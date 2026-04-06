@@ -1435,7 +1435,8 @@ def fetch_xee(
         collection, temporal_aggregation, start, end, indices_list
     )
 
-    # In fetch_xee, fix integer returns as dates in case of all data fetching cases/options.
+    # In fetch_xee, fix integer returns as dates 
+    # in case of all data fetching cases/options.
     if temporal_aggregation == "all":
         # Ensure system:time_start is a proper property xee can read
         collection = collection.map(
@@ -1458,7 +1459,7 @@ def fetch_xee(
         geometry=ee_bbox,
         chunks=default_chunks,
     )
-    # Detect integer time coordinate (xee bug with temporal_aggregation='all', 
+    # Detect integer time coordinate (xee bug with temporal_aggregation='all',
     # should be fixed, if not use the, help warning to fix locally.)
     if np.issubdtype(ds_lazy["time"].dtype, np.integer):
         warnings.warn(
