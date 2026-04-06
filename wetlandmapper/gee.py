@@ -1435,6 +1435,16 @@ def fetch_xee(
         collection, temporal_aggregation, start, end, indices_list
     )
 
+    # In fetch_xee, fix integer returns as dates in case of all data fetching cases/options.
+    if temporal_aggregation == "all":
+        # Ensure system:time_start is a proper property xee can read
+        collection = collection.map(
+            lambda img: img.set(
+                "system:time_start", img.get("system:time_start")
+            )
+        )
+    collection = collection.sort("system:time_start")
+
     import xarray as xr
 
     # xee needs projection with embedded scale, not a bare scale kwarg
@@ -1448,7 +1458,15 @@ def fetch_xee(
         geometry=ee_bbox,
         chunks=default_chunks,
     )
-
+    # Detect integer time coordinate (xee bug with temporal_aggregation='all', 
+    # should be fixed, if not use the, help warning to fix locally.)
+    if np.issubdtype(ds_lazy["time"].dtype, np.integer):
+        warnings.warn(
+            "xee returned integer time indices instead of dates. "
+            "Use temporal_aggregation='annual'/'monthly' to avoid this, "
+            "or reassign timestamps manually after .compute().",
+            UserWarning, stacklevel=2,
+        )
     # ---------------------------------------------------------------
     # xee returns lat ascending (south → north).  Sort descending so
     # the spatial orientation matches fetch() (north → south, standard
