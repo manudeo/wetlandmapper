@@ -316,7 +316,7 @@ def compute_aweish(
     DN values and includes a 0.0001 scaling factor. This implementation
     operates on surface reflectance already scaled to [0, 1], so the
     constant is omitted.
-    
+
     References
     ----------
     Feyisa, G. L., Meilby, H., Fensholt, R., & Proud, S. R. (2014).
@@ -369,7 +369,7 @@ def compute_aweinsh(
     -------
     xr.DataArray
         AWEInsh values. A threshold of 0.0 separates water from non-water.
-    
+
     Notes
     -----
     The 0.0001 DN scaling factor from the original paper is omitted here
