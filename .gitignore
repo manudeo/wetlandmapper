@@ -11,6 +11,11 @@ build/
 venv/
 env/
 
+# Summary files
+CODEBASE_ANALYSIS.md
+LINTING_SUMMARY.txt
+PRE-COMMIT-SUMMARY.txt
+
 # Testing & coverage
 .pytest_cache/
 .coverage
@@ -42,7 +47,7 @@ notebooks/.ipynb_checkpoints/
 # Docs build
 docs/_build/
 
-# SSH keys & credentials (CRITICAL - never commit!)
+# SSH keys & credentials 
 github
 github.pub
 *_rsa
