@@ -1435,7 +1435,7 @@ def fetch_xee(
         collection, temporal_aggregation, start, end, indices_list
     )
 
-    # In fetch_xee, fix integer returns as dates 
+    # In fetch_xee, fix integer returns as dates
     # in case of all data fetching cases/options.
     if temporal_aggregation == "all":
         # Ensure system:time_start is a proper property xee can read
