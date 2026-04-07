@@ -1304,74 +1304,58 @@ def fetch_xee(
     project: str | None = None,
     chunks: dict | None = None,
 ) -> "xr.DataArray | xr.Dataset":
-    """Retrieve spectral indices from GEE as a **lazy Dask-backed xarray** via xee.
-
-    Unlike :func:`fetch`, no pixels are transferred until ``.compute()`` is
-    called.  Practical for large AOIs and multi-decade time series.
+    """Retrieve spectral indices from GEE as a lazy Dask-backed xarray via xee.
 
     Parameters
     ----------
     aoi : dict, str, or Path
-        Area of interest — same formats as :func:`fetch`.
-    start : str
-        Start date ISO 8601.
-    end : str
-        End date ISO 8601.
+        GeoJSON dict, shapefile path, or GeoJSON file path.
+    start, end : str
+        ISO 8601 date strings.
     sensor : str
-        See :func:`fetch` for the full list.  Default ``"Landsat8"``.
+        Sensor key — see :func:`fetch` for the full list.  Default ``"Landsat8"``.
     index : str or list of str
         One or more of ``"MNDWI"``, ``"NDVI"``, ``"NDTI"``.
         Single str → DataArray; list → Dataset.
     scale : int
-        Spatial resolution in metres.  Default 30.
+        Pixel resolution in metres.  Default 30.
     max_cloud_cover : float
-        Maximum cloud cover (%) per image.  Default 20.
+        Maximum per-image cloud cover (%).  Default 20.
     temporal_aggregation : {"all", "annual", "monthly", "seasonal"}
-        Server-side compositing.  Default ``"all"``.
+        Server-side compositing mode.  Default ``"all"``.
 
         .. warning::
-            ``"all"`` returns one image per scene with no compositing.
-            xee versions < 0.0.9 may return integer indices (0, 1, 2 …)
-            instead of real timestamps for this mode.  A ``UserWarning``
-            is raised and the fix is applied automatically when the bug is
-            detected.  Prefer ``"annual"`` or ``"monthly"`` for large
-            multi-year collections.
+            ``"all"`` passes the raw scene collection to xee with no
+            compositing.  Older xee versions may return integer time
+            indices (0, 1, 2 …) instead of real timestamps for this mode.
+            This function detects the issue, emits a ``UserWarning``, and
+            patches the time coordinate automatically by querying
+            ``system:time_start`` from GEE.  Use ``"annual"`` or
+            ``"monthly"`` to avoid the extra round-trip.
 
     use_slc_off : bool
-        Include Landsat 7 SLC-off images?  Default ``False``.
+        Include Landsat 7 SLC-off scenes.  Default ``False``.
     project : str, optional
         GEE cloud project ID.
     chunks : dict, optional
-        Dask chunk sizes.  Defaults to ``{"time": 1, "lon": 512, "lat": 512}``.
+        Dask chunk sizes, e.g. ``{"time": 1, "lon": 512, "lat": 512}``.
 
     Returns
     -------
-    xr.DataArray
-        Lazy DataArray with dims ``(time, lat, lon)`` for a single index.
-    xr.Dataset
-        Lazy Dataset, dims ``(time, lat, lon)`` for multiple indices.
+    xr.DataArray or xr.Dataset
+        Lazy object with dims ``(time, lat, lon)``.
 
     Notes
     -----
-    **Dimension names:**
-    xee uses ``"lat"`` / ``"lon"`` not ``"y"`` / ``"x"``.  After calling
-    ``.compute()``, rename and orient with::
+    After calling ``.compute()``, orient dimensions with::
 
         da = da.rename({"lat": "y", "lon": "x"}).transpose("time", "y", "x")
-
-    **Integer time-coordinate fix:**
-    If xee returns integer indices for the time coordinate (a known bug
-    with ``temporal_aggregation="all"``), this function detects the issue
-    and falls back to querying ``system:time_start`` from the GEE
-    collection to restore real timestamps.
 
     Examples
     --------
     >>> mndwi_lazy = fetch_xee(
     ...     aoi, "1984-01-01", "2023-12-31",
-    ...     sensor="LandsatAll",
-    ...     temporal_aggregation="annual",
-    ...     chunks={"time": 1, "lon": 512, "lat": 512},
+    ...     sensor="LandsatAll", temporal_aggregation="annual",
     ... )
     >>> mndwi = (
     ...     mndwi_lazy
@@ -1386,15 +1370,12 @@ def fetch_xee(
     except ImportError:
         raise ImportError(
             "xee is required for fetch_xee(). "
-            "Install:  pip install 'wetlandmapper[gee]'"
+            "Install: pip install 'wetlandmapper[gee]'"
         )
     try:
         import dask  # noqa: F401
     except ImportError:
-        raise ImportError(
-            "dask is required for fetch_xee(). "
-            "Install:  pip install dask"
-        )
+        raise ImportError("dask is required. Install: pip install dask")
 
     if temporal_aggregation not in _VALID_AGGREGATIONS:
         raise ValueError(
@@ -1416,9 +1397,7 @@ def fetch_xee(
 
     ee_geom = _parse_aoi(aoi)
 
-    # ---------------------------------------------------------------
     # xee requires a bounding box — arbitrary polygon → one-pixel bug
-    # ---------------------------------------------------------------
     bounds_info = ee_geom.bounds().getInfo()["coordinates"][0]
     lons = [c[0] for c in bounds_info]
     lats = [c[1] for c in bounds_info]
@@ -1439,16 +1418,11 @@ def fetch_xee(
         collection, temporal_aggregation, start, end, indices_list
     )
 
-    # collection = collection.map(
-    # lambda img: img.reproject(crs="EPSG:4326", scale=scale)
-    # )
-
     import numpy as np
     import pandas as pd
     import xarray as xr
 
-    # projection  required, not using lambda mapping above)
-    projection = ee.Projection("EPSG:4326").atScale(scale) 
+    projection = ee.Projection("EPSG:4326").atScale(scale)
     default_chunks = chunks or {"time": 1, "lon": 512, "lat": 512}
 
     ds_lazy = xr.open_dataset(
@@ -1459,49 +1433,57 @@ def fetch_xee(
         chunks=default_chunks,
     )
 
-    # ---------------------------------------------------------------
-    # Fix: xee returns integer time indices for temporal_aggregation="all"
-    # (and occasionally for other modes in older xee versions).
-    # Detect by checking whether the time dtype is integer.
-    # ---------------------------------------------------------------
+    # ----------------------------------------------------------------
+    # Integer time-coordinate fix
+    #
+    # xee sometimes returns integer indices (0, 1, 2 …) instead of
+    # real timestamps — a known bug with temporal_aggregation="all" and
+    # some older xee versions.
+    #
+    # Fix strategy:
+    #   1. Detect the issue via dtype check.
+    #   2. Fetch real timestamps from GEE via aggregate_array().
+    #   3. Slice ds_lazy to the number of available timestamps (GEE may
+    #      return fewer images than xee allocated slots for), then
+    #      assign_coords.  Slicing first avoids a shape-mismatch error
+    #      if len(ms_list) < ds_lazy.sizes["time"].
+    # ----------------------------------------------------------------
     if np.issubdtype(ds_lazy["time"].dtype, np.integer):
         warnings.warn(
-            "fetch_xee: xee returned integer time indices (0, 1, 2 …) instead "
-            "of real timestamps — this is a known xee limitation when "
-            "temporal_aggregation='all'. Fetching real timestamps from GEE "
-            "and patching the time coordinate automatically.\n"
-            "To avoid this, use temporal_aggregation='annual' or 'monthly'.",
+            "fetch_xee: xee returned integer time indices instead of "
+            "real timestamps (known xee limitation with "
+            "temporal_aggregation='all'). Fetching real timestamps from "
+            "GEE and patching the time coordinate automatically.\n"
+            "Tip: use temporal_aggregation='annual' or 'monthly' to avoid "
+            "this extra round-trip.",
             UserWarning,
             stacklevel=2,
         )
-        # Retrieve the actual system:time_start values from the collection.
-        # getInfo() is a synchronous call — unavoidable here, but only fires
-        # when the bug is detected, not on every call.
         try:
             ms_list = collection.aggregate_array("system:time_start").getInfo()
         except Exception as exc:
             warnings.warn(
                 f"fetch_xee: Could not retrieve timestamps from GEE ({exc}). "
                 "Time coordinate will remain as integer indices. "
-                "You can fix this manually: "
-                "da['time'] = pd.to_datetime(ms_list, unit='ms')",
+                "Fix manually after .compute():\n"
+                "    da['time'] = pd.to_datetime(ms_list, unit='ms')",
                 UserWarning,
                 stacklevel=2,
             )
             ms_list = None
 
         if ms_list is not None:
-            n_times = ds_lazy.sizes.get("time", 0)
-            # Truncate to the number of images actually in ds_lazy
-            ms_trimmed = ms_list[:n_times]
-            real_times = pd.to_datetime(ms_trimmed, unit="ms")
-            ds_lazy = ds_lazy.assign_coords(time=real_times)
+            # Number of valid timestamps may be less than xee's allocated
+            # time slots — always take the minimum to avoid shape mismatch.
+            n_available = min(ds_lazy.sizes.get("time", 0), len(ms_list))
+            real_times  = pd.to_datetime(ms_list[:n_available], unit="ms")
+            # Slice first, then assign — this is the correct order.
+            ds_lazy = ds_lazy.isel(time=slice(n_available)).assign_coords(
+                time=real_times
+            )
 
-    # ---------------------------------------------------------------
-    # xee returns lat ascending (south → north). Sort descending so
-    # spatial orientation matches standard raster convention (north first).
-    # sortby is lazy — no compute triggered here.
-    # ---------------------------------------------------------------
+    # xee returns lat ascending (south → north); sort descending for
+    # standard raster orientation.  sortby is lazy.
     if "lat" in ds_lazy.dims:
         ds_lazy = ds_lazy.sortby("lat", ascending=False)
 
