@@ -417,32 +417,113 @@ def compute_wet_frequency(
 
 def aggregate_time(
     da: "xr.DataArray | xr.Dataset",
-    freq: str = "YE",
+    freq: str = "annual",
     method: str = "median",
 ) -> "xr.DataArray | xr.Dataset":
-    """Resample a time-series DataArray or Dataset to a lower frequency.
+    """Temporally aggregate a multi-temporal xarray object before classification.
+
+    Reduces a time series to one composite per chosen period by computing a
+    pixel-wise statistic within each period.  Useful for:
+
+    - **Dynamics**: produce annual composites from all available scenes rather
+      than using every raw overpass.
+    - **WCT**: produce monthly or seasonal composites, then classify each with
+      :func:`~wetlandmapper.classify_wct` / :func:`~wetlandmapper.classify_wct_ema`.
 
     Parameters
     ----------
     da : xr.DataArray or xr.Dataset
-        Input with a ``time`` dimension.
-    freq : str
-        Pandas offset alias, e.g. ``"YE"`` (annual), ``"ME"`` (monthly),
-        ``"QE"`` (quarterly).  Default ``"YE"``.
+        Input data with a ``time`` dimension.  Accepts both GEE-fetched and
+        locally constructed objects.
+    freq : {"annual", "monthly", "seasonal", "all"}
+        Aggregation period:
+
+        ``"annual"``
+            One composite per calendar year (resampled to year-end).
+        ``"monthly"``
+            One composite per calendar month.
+        ``"seasonal"``
+            One composite per meteorological season per year:
+            DJF (Dec–Jan–Feb), MAM (Mar–Apr–May),
+            JJA (Jun–Jul–Aug), SON (Sep–Oct–Nov).
+            Uses ``pandas`` quarterly resampling anchored to December.
+        ``"all"``
+            No aggregation — returns ``da`` unchanged.
+
     method : {"median", "mean", "max", "min"}
-        Reduction method.  Default ``"median"``.
+        Pixel-wise statistic computed within each period. Default ``"median"``.
 
     Returns
     -------
     xr.DataArray or xr.Dataset
-        Resampled object.  NaNs (``skipna=True`` is the xarray default)
-        are excluded from the reduction within each period.
-    """
-    _valid_methods = ("median", "mean", "max", "min")
-    if method not in _valid_methods:
-        raise ValueError(
-            f"method must be one of {_valid_methods}, got {method!r}."
-        )
+        Same type as ``da`` with a reduced ``time`` dimension (one step per
+        period).  For ``"seasonal"``, the time coordinate is labelled with the
+        first day of each quarter (e.g., ``2003-12-01`` for DJF 2004).
 
-    resampled = da.resample(time=freq)
-    return getattr(resampled, method)()
+    Raises
+    ------
+    ValueError
+        If ``freq`` or ``method`` is not one of the valid options.
+
+    Examples
+    --------
+    Produce annual MNDWI composites from a dense time series:
+
+    >>> from wetlandmapper.dynamics import aggregate_time
+    >>> mndwi_annual = aggregate_time(mndwi_ts, freq="annual")
+    >>> dynamics = classify_dynamics(mndwi_annual, nYear=3)
+
+    Produce seasonal composites for WCT classification:
+
+    >>> from wetlandmapper import compute_indices, classify_wct_ema
+    >>> from wetlandmapper.dynamics import aggregate_time
+    >>> indices_ts = fetch(aoi, "2010-01-01", "2023-12-31",
+    ...                    index=["MNDWI","NDVI","NDTI"])
+    >>> seasonal = aggregate_time(indices_ts, freq="seasonal")
+    >>> # Classify each season independently
+    >>> for t in seasonal.time:
+    ...     wct = classify_wct_ema(seasonal.sel(time=t))
+
+    Notes
+    -----
+    Pixels that are NaN (masked by cloud or no-data) in all scenes within a
+    period remain NaN in the composite.  The statistic is computed ignoring
+    NaNs (``skipna=True`` is the xarray default).
+    """
+    _VALID_FREQ = {"annual", "monthly", "seasonal", "all"}
+    _VALID_METHOD = {"median", "mean", "max", "min"}
+
+    if freq not in _VALID_FREQ:
+        raise ValueError(f"freq must be one of {_VALID_FREQ}. Got {freq!r}.")
+    if method not in _VALID_METHOD:
+        raise ValueError(f"method must be one of {_VALID_METHOD}. Got {method!r}.")
+
+    if freq == "all":
+        return da
+
+    _RESAMPLE_RULE = {
+        "annual": "YE",
+        "monthly": "ME",
+        # QS-DEC anchors quarters to December: DJF / MAM / JJA / SON
+        "seasonal": "QS-DEC",
+    }
+
+    resampled = da.resample(time=_RESAMPLE_RULE[freq])
+
+    _AGG = {
+        "median": resampled.median,
+        "mean": resampled.mean,
+        "max": resampled.max,
+        "min": resampled.min,
+    }
+    result = _AGG[method]()
+
+    # Carry forward the name (DataArray only)
+    if isinstance(da, xr.DataArray) and da.name:
+        result.name = da.name
+
+    # Descriptive attribute
+    result.attrs["temporal_aggregation"] = freq
+    result.attrs["aggregation_method"] = method
+
+    return result
