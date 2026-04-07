@@ -1,7 +1,8 @@
-"""Wetland dynamics classification and temporal aggregation utilities."""
+"""Wetland dynamics classification and temporal aggregation utilities.
 
-# Copyright (c) 2026, Manudeo Singh
-# Author: Manudeo Singh, March 2026
+Copyright (c) 2026, Manudeo Singh
+Author: Manudeo Singh, March 2026
+"""
 
 from __future__ import annotations
 
@@ -16,9 +17,7 @@ if TYPE_CHECKING:
 try:
     import xarray as xr
 except ImportError as e:
-    raise ImportError(
-        "xarray is required. Install: pip install wetlandmapper"
-    ) from e
+    raise ImportError("xarray is required. Install: pip install wetlandmapper") from e
 
 try:
     from rioxarray import exceptions as _rio_exc  # noqa: F401
@@ -50,6 +49,8 @@ DYNAMICS_COLORS: dict[int, str] = {
     10: "#1a5276",
 }
 
+_VALID_NAN_POLICIES = ("total", "valid")
+
 
 # ---------------------------------------------------------------------------
 # Main classification function
@@ -63,72 +64,75 @@ def classify_dynamics(
     water_threshold: float = 0.0,
     nan_policy: str = "total",
     min_valid_obs: int | None = None,
-    # ── backward-compatibility aliases ────────────────────────────────────
-    mndwi: xr.DataArray | None = None,
+    # backward-compatibility alias only — no mndwi= alias (function is index-agnostic)
     mndwi_threshold: float | None = None,
 ) -> xr.DataArray:
-    """Classify wetland pixels into six temporal dynamics classes.
+    """Classify wetland pixels into six mutually exclusive temporal dynamics classes.
+
+    Each pixel is assigned to exactly one class based on three temporal
+    summary statistics derived from a multi-year water index stack:
+
+    * Overall wet frequency  *W%*  (% of years above ``water_threshold``)
+    * Historic wet count  *W_historic*  (first ``nYear`` years)
+    * Recent wet count    *W_recent*    (last  ``nYear`` years)
+
+    **Class priority (strictly exclusive — a pixel receives exactly one class):**
+
+    =========  ====  ===================================================
+    Class      Code  Primary condition
+    =========  ====  ===================================================
+    Persistent  10   W% ≥ thresholdPersis
+    New          2   W_historic = 0  AND  W_recent > 0  (newly appeared)
+    Lost         3   W_historic > 0  AND  W_recent = 0  (fully gone)
+    Intensifying 5   W% ≥ thresholdWet  AND  delta > 0  (not New)
+    Diminishing  4   W% ≥ thresholdWet  AND  delta < 0  (not Lost)
+    Intermittent 6   W% ≥ thresholdWet  AND  no directional signal
+    Non-wetland  0   W% < thresholdWet
+    =========  ====  ===================================================
+
+    Each priority is applied only to **unclassified** pixels (code = 0),
+    preventing any pixel from receiving more than one class code even when
+    multiple conditions are simultaneously true (e.g. a pixel that is both
+    Persistent *and* Intensifying will be classified as Persistent only).
 
     Parameters
     ----------
     water_index : xr.DataArray
         Multi-temporal water index time series with a ``time`` dimension.
-        Can be MNDWI, AWEIsh, AWEInsh, or any index where positive values
-        indicate water.
-
-        .. deprecated::
-            Passing the array as keyword argument ``mndwi=`` is still
-            accepted for backward compatibility but will be removed in a
-            future release.  Use the first positional argument instead.
-
+        Accepts MNDWI, AWEIsh, AWEInsh, NDWI, or any index where positive
+        values indicate surface water.
     nYear : int
-        Number of years at each end of the record used to define the
-        "historic" and "recent" windows for trend detection.  Default 3.
+        Length of the historic and recent windows in years.  Default 3.
     thresholdWet : float
-        Minimum wet frequency (%) for a pixel to be classified as any
-        wetland class.  Default 25.
+        Minimum wet frequency (%) for a pixel to be any wetland class.
+        Default 25.
     thresholdPersis : float
-        Wet frequency (%) above which a pixel is classified as Persistent.
-        Must be greater than ``thresholdWet``.  Default 75.
+        Wet frequency (%) above which a pixel is Persistent.  Must be
+        greater than ``thresholdWet``.  Default 75.
     water_threshold : float
-        Index value above which a pixel is counted as wet each year.
+        Index value above which a pixel is counted as wet in a given year.
         Default 0.0 (positive MNDWI = water-dominated; Xu 2006).
-
-        .. deprecated::
-            Keyword argument ``mndwi_threshold=`` is still accepted for
-            backward compatibility but will be removed in a future release.
-            Use ``water_threshold=`` instead.
-
     nan_policy : {"total", "valid"}
-        How to handle missing (NaN) observations when computing wet
-        frequency and trend windows.
+        Denominator used when computing wet frequency.
 
-        ``"total"`` (default)
-            Use the total number of time steps as the denominator.
-            NaN pixels count as dry.  This is the original behaviour from
-            Singh & Sinha (2022) and is appropriate when NaN pixels are
-            rare and randomly distributed.
+        ``"total"`` *(default)*
+            Denominator = total number of time steps.  NaN pixels count as
+            dry.  Reproduces the original Singh & Sinha (2022) method.
+            Appropriate when NaN values are rare or randomly distributed.
 
         ``"valid"``
-            Use the per-pixel count of non-NaN observations as the
-            denominator.  Wet frequency is therefore the fraction of
-            *cloud-free* observations that were wet.  Trend windows
-            (historic, recent) are also normalised by their own valid
-            counts, and ``delta`` is expressed as a fraction in [−1, +1]
-            rather than a raw count.  Use this when cloud masking produces
-            substantial or spatially clustered NaN values.
+            Denominator = per-pixel count of non-NaN observations.  Wet
+            frequency is the fraction of *cloud-free* years that were wet.
+            The historic/recent windows are also normalised by their own
+            valid counts so that ``delta`` is expressed as a fraction
+            in [−1, +1].  Use when cloud masking produces substantial
+            or spatially clustered NaN values.
 
     min_valid_obs : int, optional
-        Minimum number of valid (non-NaN) observations required for a
-        pixel to receive a classification under ``nan_policy="valid"``.
-        Pixels below this threshold are set to NaN in the output.
-        If ``None`` (default), no minimum is enforced.  Ignored when
-        ``nan_policy="total"``.
-
-    mndwi : xr.DataArray, optional
-        **Deprecated.** Pass the water index as the first positional
-        argument instead.
-
+        *(Only active when nan_policy="valid".)* Minimum number of non-NaN
+        observations required for classification.  Pixels with fewer valid
+        observations are set to NaN in the output.  Default ``None``
+        (no minimum enforced).
     mndwi_threshold : float, optional
         **Deprecated.** Use ``water_threshold`` instead.
 
@@ -136,7 +140,15 @@ def classify_dynamics(
     -------
     xr.DataArray
         Integer DataArray (dtype int8) of shape ``(y, x)`` with class
-        codes defined in :data:`DYNAMICS_CLASSES`.
+        codes from :data:`DYNAMICS_CLASSES`.  Guaranteed to contain only
+        valid class codes — no additive artefacts.
+
+    Raises
+    ------
+    ValueError
+        If ``water_index`` lacks a ``time`` dimension, if ``nYear * 2 >
+        n_time``, if thresholds are out of range, or if ``nan_policy`` is
+        not one of the accepted values.
 
     References
     ----------
@@ -144,22 +156,11 @@ def classify_dynamics(
     https://doi.org/10.1080/2150704X.2021.1980919
     """
     # ------------------------------------------------------------------
-    # Backward-compatibility shims
+    # Backward-compatibility shim
     # ------------------------------------------------------------------
-    if mndwi is not None:
-        warnings.warn(
-            "The 'mndwi' keyword argument is deprecated and will be removed "
-            "in a future release. Pass the water index as the first positional "
-            "argument: classify_dynamics(my_mndwi, ...).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        water_index = mndwi
-
     if mndwi_threshold is not None:
         warnings.warn(
-            "The 'mndwi_threshold' keyword argument is deprecated and will be "
-            "removed in a future release. Use 'water_threshold' instead.",
+            "'mndwi_threshold' is deprecated; use 'water_threshold' instead.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -170,8 +171,8 @@ def classify_dynamics(
     # ------------------------------------------------------------------
     if "time" not in water_index.dims:
         raise ValueError(
-            "Input 'water_index' must have a 'time' dimension. "
-            f"Found dimensions: {water_index.dims}"
+            "'water_index' must have a 'time' dimension. "
+            f"Found: {water_index.dims}"
         )
     n_time = len(water_index.time)
     if nYear * 2 > n_time:
@@ -186,127 +187,146 @@ def classify_dynamics(
             f"thresholdPersis ({thresholdPersis}) must be greater than "
             f"thresholdWet ({thresholdWet})."
         )
-    if nan_policy not in ("total", "valid"):
+    if nan_policy not in _VALID_NAN_POLICIES:
         raise ValueError(
-            f"nan_policy must be 'total' or 'valid', got {nan_policy!r}."
+            f"nan_policy must be one of {_VALID_NAN_POLICIES}, "
+            f"got {nan_policy!r}."
         )
 
     # ------------------------------------------------------------------
-    # Stage 1: Binary water mask per time step
+    # Stage 1: Summary statistics
     # ------------------------------------------------------------------
-    if nan_policy == "total":
-        # Original behaviour: NaN treated as dry, denominator = n_time
-        water_binary = xr.where(water_index > water_threshold, 1, 0)
+    his_slice = water_index.isel(time=slice(0, nYear))
+    rec_slice = water_index.isel(time=slice(-nYear, None))
 
-        wall      = water_binary.sum(dim="time")
-        whistoric = water_binary.isel(time=slice(0, nYear)).sum(dim="time")
-        wrecent   = water_binary.isel(time=slice(-nYear, None)).sum(dim="time")
+    if nan_policy == "total":
+        # Original method: NaN → dry, denominator = n_time
+        wb       = xr.where(water_index > water_threshold, 1, 0)
+        wb_his   = xr.where(his_slice   > water_threshold, 1, 0)
+        wb_rec   = xr.where(rec_slice   > water_threshold, 1, 0)
+
+        wall      = wb.sum(dim="time")
+        whistoric = wb_his.sum(dim="time")
+        wrecent   = wb_rec.sum(dim="time")
 
         w_percent = (wall / n_time) * 100
-        delta_w   = wrecent - whistoric          # raw count in [-nYear, +nYear]
 
-        # Classification conditions — same as original
-        def _is_new(dw):
-            return dw == nYear
-        def _is_lost(dw):
-            return dw == -nYear
-        def _is_intensifying(wp, dw):
-            return (wp >= thresholdWet) & (dw > 0) & (dw < nYear)
-        def _is_diminishing(wp, dw):
-            return (wp >= thresholdWet) & (dw < 0) & (dw > -nYear)
+        # Trend window: raw counts in [0, nYear]
+        # ── Classification helpers (total mode) ───────────────────────
+        def _new(wh, wr):    return (wh == 0)  & (wr > 0)
+        def _lost(wh, wr):   return (wh > 0)   & (wr == 0)
+        def _intens(wp, wh, wr): return (wp >= thresholdWet) & (wr > wh) & ~_new(wh, wr)
+        def _dimin(wp, wh, wr):  return (wp >= thresholdWet) & (wr < wh) & ~_lost(wh, wr)
+
+        wh_arg, wr_arg = whistoric, wrecent
 
     else:
-        # nan_policy == "valid": per-pixel denominator
-        # Cast to float so NaN propagates correctly (int > threshold gives bool,
-        # which loses NaN information).
-        wet_mask = water_index > water_threshold        # bool, NaN stays NaN
-        wet_float = wet_mask.where(water_index.notnull())   # NaN where input is NaN
+        # Valid mode: per-pixel denominator
+        def _safe_mean(da, dim):
+            """Fraction of valid observations that were wet."""
+            wet   = (da > water_threshold).where(da.notnull())
+            n_v   = da.count(dim=dim)
+            return wet.sum(dim=dim, skipna=True) / n_v.where(n_v > 0)
 
-        n_valid   = water_index.count(dim="time")
-        n_his_valid = water_index.isel(time=slice(0, nYear)).count(dim="time")
-        n_rec_valid = water_index.isel(time=slice(-nYear, None)).count(dim="time")
+        f_total = _safe_mean(water_index, "time")
+        f_his   = _safe_mean(his_slice,   "time")
+        f_rec   = _safe_mean(rec_slice,   "time")
 
-        wall      = wet_float.sum(dim="time", skipna=True)
-        whistoric = wet_float.isel(time=slice(0, nYear)).sum(dim="time", skipna=True)
-        wrecent   = wet_float.isel(time=slice(-nYear, None)).sum(dim="time", skipna=True)
+        n_valid = water_index.count(dim="time")
+        w_percent = f_total * 100
 
-        # Safe division: avoid /0 for pixels with no valid obs
-        w_percent = (wall / n_valid.where(n_valid > 0)) * 100
+        # ── Classification helpers (valid mode) ───────────────────────
+        def _new(fh, fr):    return (fh == 0)  & (fr > 0)
+        def _lost(fh, fr):   return (fh > 0)   & (fr == 0)
+        def _intens(wp, fh, fr): return (wp >= thresholdWet) & (fr > fh) & ~_new(fh, fr)
+        def _dimin(wp, fh, fr):  return (wp >= thresholdWet) & (fr < fh) & ~_lost(fh, fr)
 
-        # Normalise each window by its own valid count → fraction [0, 1]
-        f_his = whistoric / n_his_valid.where(n_his_valid > 0)  # NaN if no data
-        f_rec = wrecent   / n_rec_valid.where(n_rec_valid > 0)
-
-        delta_f = f_rec - f_his                  # fraction in [-1, +1]
-
-        # Classification conditions use fraction-based logic
-        def _is_new(df):
-            return (f_his == 0) & (f_rec > 0)
-        def _is_lost(df):
-            return (f_his > 0)  & (f_rec == 0)
-        def _is_intensifying(wp, df):
-            return (wp >= thresholdWet) & (df > 0) & ~_is_new(df)
-        def _is_diminishing(wp, df):
-            return (wp >= thresholdWet) & (df < 0) & ~_is_lost(df)
-
-        delta_w = delta_f   # unified name for the classification stage below
+        wh_arg, wr_arg = f_his, f_rec
 
     # ------------------------------------------------------------------
-    # Stage 3: Dynamics classification (additive integer encoding)
+    # Stage 2: Exclusive priority classification
+    #
+    # Each rule uses the guard `classification == 0` so that a pixel
+    # already assigned a class is never overwritten.  This prevents
+    # additive artefacts (e.g. Persistent=10 + Intensifying=5 → 15)
+    # that arise when multiple conditions are simultaneously true.
+    #
+    # Priority order (high → low):
+    #   Persistent (10) → New (2) → Lost (3) → Intensifying (5)
+    #   → Diminishing (4) → Intermittent (6) → Non-wetland (0)
     # ------------------------------------------------------------------
+    unset = lambda c: c == 0   # noqa: E731  helper for readability
+
     classification = xr.zeros_like(w_percent, dtype=np.int8)
 
-    # Priority 1 — Persistent
+    # 1 — Persistent
     classification = xr.where(
-        w_percent >= thresholdPersis,
-        classification + 10,
+        unset(classification) & (w_percent >= thresholdPersis),
+        np.int8(10),
         classification,
     )
 
-    # Priority 2 — New
+    # 2 — New
     classification = xr.where(
-        _is_new(delta_w),
-        classification + 2,
+        unset(classification) & _new(wh_arg, wr_arg),
+        np.int8(2),
         classification,
     )
 
-    # Priority 3 — Intensifying
+    # 3 — Lost
     classification = xr.where(
-        _is_intensifying(w_percent, delta_w),
-        classification + 5,
+        unset(classification) & _lost(wh_arg, wr_arg),
+        np.int8(3),
         classification,
     )
 
-    # Priority 4 — Diminishing
+    # 4 — Intensifying
     classification = xr.where(
-        _is_diminishing(w_percent, delta_w),
-        classification + 4,
+        unset(classification) & _intens(w_percent, wh_arg, wr_arg),
+        np.int8(5),
         classification,
     )
 
-    # Priority 5 — Lost
+    # 5 — Diminishing
     classification = xr.where(
-        _is_lost(delta_w),
-        classification + 3,
+        unset(classification) & _dimin(w_percent, wh_arg, wr_arg),
+        np.int8(4),
         classification,
     )
 
-    # Priority 6 — Intermittent
+    # 6 — Intermittent
     classification = xr.where(
-        (w_percent >= thresholdWet) & (classification == 0),
-        classification + 6,
+        unset(classification) & (w_percent >= thresholdWet),
+        np.int8(6),
         classification,
     )
+
+    # 0 — Non-wetland: pixels still 0 (below thresholdWet) remain
 
     # ------------------------------------------------------------------
-    # Stage 4: Mask insufficient-data pixels (valid mode only)
+    # Stage 3: Mask insufficient-data pixels (valid mode only)
     # ------------------------------------------------------------------
     if nan_policy == "valid" and min_valid_obs is not None:
-        enough_data = n_valid >= min_valid_obs
-        classification = classification.where(enough_data)
+        classification = classification.where(n_valid >= min_valid_obs)
 
     # ------------------------------------------------------------------
-    # Preserve spatial reference
+    # Sanity check: no pixel should have a code outside valid set
+    # ------------------------------------------------------------------
+    valid_codes = np.array(list(DYNAMICS_CLASSES.keys()), dtype=np.int8)
+    # (this is a no-cost check on the non-NaN values)
+    assert (
+        np.isin(
+            classification.values[~np.isnan(classification.values.astype(float))],
+            valid_codes
+        ).all()
+    ), (
+        "classify_dynamics produced invalid class codes — this is a bug. "
+        f"Unexpected values: "
+        f"{set(np.unique(classification.values.astype(int)).tolist()) - set(DYNAMICS_CLASSES.keys())}"
+    )
+
+    # ------------------------------------------------------------------
+    # Preserve CRS if available
     # ------------------------------------------------------------------
     if _HAS_RIO:
         try:
@@ -314,16 +334,14 @@ def classify_dynamics(
             if crs is not None:
                 classification = classification.rio.write_crs(crs)
         except Exception as e:
-            warnings.warn(
-                f"Could not write CRS to output: {e}.",
-                stacklevel=2,
-            )
+            warnings.warn(f"Could not write CRS to output: {e}.", stacklevel=2)
 
     # ------------------------------------------------------------------
     # Metadata
     # ------------------------------------------------------------------
-    name = f"dynamics_nYear{nYear}_wet{thresholdWet}_persis{thresholdPersis}"
-    classification.name = name
+    classification.name = (
+        f"dynamics_nYear{nYear}_wet{thresholdWet}_persis{thresholdPersis}"
+    )
     classification.attrs.update(
         long_name="Wetland Temporal Dynamics Class",
         nYear=nYear,
@@ -338,7 +356,6 @@ def classify_dynamics(
             "https://doi.org/10.1080/2150704X.2021.1980919"
         ),
     )
-
     return classification
 
 
@@ -350,7 +367,6 @@ def compute_wet_frequency(
     water_index: xr.DataArray,
     water_threshold: float = 0.0,
     nan_policy: str = "total",
-    # backward-compat alias
     mndwi_threshold: float | None = None,
 ) -> xr.DataArray:
     """Return the pixel-wise wet frequency (%) across the full time series.
@@ -361,53 +377,44 @@ def compute_wet_frequency(
         Multi-temporal water index with a ``time`` dimension.
     water_threshold : float
         Index value above which a pixel is counted as wet.  Default 0.0.
-
-        .. deprecated::
-            ``mndwi_threshold`` is still accepted for backward compatibility
-            but will be removed in a future release.
-
     nan_policy : {"total", "valid"}
-        ``"total"`` (default): NaN pixels count as dry; denominator is the
-        total number of time steps.  Matches the original method.
-
-        ``"valid"``: denominator is the per-pixel count of non-NaN
-        observations.  Wet frequency is the fraction of cloud-free years
-        that were wet.
+        ``"total"`` (default): denominator = total time steps; NaN = dry.
+        ``"valid"``: denominator = per-pixel non-NaN count.
+    mndwi_threshold : float, optional
+        **Deprecated.** Use ``water_threshold`` instead.
 
     Returns
     -------
     xr.DataArray
-        Wet frequency in percent (0–100), or NaN where all observations
-        are missing under ``nan_policy="valid"``.
+        Wet frequency in percent (0–100), shape ``(y, x)``.
     """
     if mndwi_threshold is not None:
         warnings.warn(
-            "The 'mndwi_threshold' keyword argument is deprecated. "
-            "Use 'water_threshold' instead.",
+            "'mndwi_threshold' is deprecated; use 'water_threshold' instead.",
             DeprecationWarning,
             stacklevel=2,
         )
         water_threshold = mndwi_threshold
 
-    if nan_policy not in ("total", "valid"):
+    if nan_policy not in _VALID_NAN_POLICIES:
         raise ValueError(
-            f"nan_policy must be 'total' or 'valid', got {nan_policy!r}."
+            f"nan_policy must be one of {_VALID_NAN_POLICIES}, got {nan_policy!r}."
         )
 
     if nan_policy == "total":
-        water_binary = xr.where(water_index > water_threshold, 1, 0)
-        freq = (water_binary.sum(dim="time") / len(water_index.time)) * 100
+        wb   = xr.where(water_index > water_threshold, 1, 0)
+        freq = (wb.sum(dim="time") / len(water_index.time)) * 100
     else:
-        wet_float = (water_index > water_threshold).where(water_index.notnull())
-        n_valid   = water_index.count(dim="time")
-        freq      = (
-            wet_float.sum(dim="time", skipna=True)
-            / n_valid.where(n_valid > 0)
-        ) * 100
+        wet   = (water_index > water_threshold).where(water_index.notnull())
+        n_v   = water_index.count(dim="time")
+        freq  = wet.sum(dim="time", skipna=True) / n_v.where(n_v > 0) * 100
 
     freq.name = "wet_frequency_pct"
-    freq.attrs["long_name"] = "Wet Frequency (%)"
-    freq.attrs["nan_policy"] = nan_policy
+    freq.attrs.update(
+        long_name="Wet Frequency (%)",
+        nan_policy=nan_policy,
+        water_threshold=water_threshold,
+    )
     return freq
 
 
