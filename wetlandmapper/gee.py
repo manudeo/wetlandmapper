@@ -1312,8 +1312,7 @@ def fetch_xee(
     Parameters
     ----------
     aoi : dict, str, or Path
-        Area of interest — same formats as :func:`fetch`:
-        GeoJSON dict, shapefile path, or GeoJSON file path.
+        Area of interest — same formats as :func:`fetch`.
     start : str
         Start date ISO 8601.
     end : str
@@ -1329,15 +1328,21 @@ def fetch_xee(
         Maximum cloud cover (%) per image.  Default 20.
     temporal_aggregation : {"all", "annual", "monthly", "seasonal"}
         Server-side compositing.  Default ``"all"``.
-        For large collections, ``"annual"`` or ``"monthly"`` is strongly
-        recommended to limit the number of lazy time steps.
+
+        .. warning::
+            ``"all"`` returns one image per scene with no compositing.
+            xee versions < 0.0.9 may return integer indices (0, 1, 2 …)
+            instead of real timestamps for this mode.  A ``UserWarning``
+            is raised and the fix is applied automatically when the bug is
+            detected.  Prefer ``"annual"`` or ``"monthly"`` for large
+            multi-year collections.
+
     use_slc_off : bool
         Include Landsat 7 SLC-off images?  Default ``False``.
     project : str, optional
         GEE cloud project ID.
     chunks : dict, optional
-        Dask chunk sizes, e.g. ``{"time": 1, "lon": 512, "lat": 512}``.
-        Defaults to ``{"time": 1, "lon": 512, "lat": 512}``.
+        Dask chunk sizes.  Defaults to ``{"time": 1, "lon": 512, "lat": 512}``.
 
     Returns
     -------
@@ -1348,19 +1353,17 @@ def fetch_xee(
 
     Notes
     -----
-    **Bounding box requirement:**
-    xee grids pixels over a rectangle.  Arbitrary polygon → centroid only
-    (one pixel).  This function extracts the AOI bounding box via
-    ``ee_geom.bounds()`` and passes that to xee.  Server-side filtering
-    (``filterBounds``) still uses the original polygon.
-
     **Dimension names:**
-    xee uses ``"lat"`` / ``"lon"`` not ``"y"`` / ``"x"``.  Rename after
-    computing if needed: ``da.rename({"lat": "y", "lon": "x"})``.
+    xee uses ``"lat"`` / ``"lon"`` not ``"y"`` / ``"x"``.  After calling
+    ``.compute()``, rename and orient with::
 
-    **Empty periods:**
-    Periods with no valid imagery produce fully-masked time slices (NaN)
-    rather than a "band not found" error.
+        da = da.rename({"lat": "y", "lon": "x"}).transpose("time", "y", "x")
+
+    **Integer time-coordinate fix:**
+    If xee returns integer indices for the time coordinate (a known bug
+    with ``temporal_aggregation="all"``), this function detects the issue
+    and falls back to querying ``system:time_start`` from the GEE
+    collection to restore real timestamps.
 
     Examples
     --------
@@ -1370,10 +1373,11 @@ def fetch_xee(
     ...     temporal_aggregation="annual",
     ...     chunks={"time": 1, "lon": 512, "lat": 512},
     ... )
-    >>> mndwi_lazy.isel(time=0).compute()   # first year only
-    >>> dynamics = classify_dynamics(
-    ...     mndwi_lazy.rename({"lat": "y", "lon": "x"}).compute(),
-    ...     nYear=3,
+    >>> mndwi = (
+    ...     mndwi_lazy
+    ...     .rename({"lat": "y", "lon": "x"})
+    ...     .transpose("time", "y", "x")
+    ...     .compute()
     ... )
     """
     _require_ee()
@@ -1413,14 +1417,14 @@ def fetch_xee(
     ee_geom = _parse_aoi(aoi)
 
     # ---------------------------------------------------------------
-    # xee requires a bounding box — polygon centroid → one pixel bug
+    # xee requires a bounding box — arbitrary polygon → one-pixel bug
     # ---------------------------------------------------------------
     bounds_info = ee_geom.bounds().getInfo()["coordinates"][0]
     lons = [c[0] for c in bounds_info]
     lats = [c[1] for c in bounds_info]
     ee_bbox = ee.Geometry.BBox(min(lons), min(lats), max(lons), max(lats))
 
-    # Build collection
+    # Build and composite the collection
     if sensor == "LandsatAll":
         collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
     elif sensor == "MODISAll":
@@ -1435,20 +1439,10 @@ def fetch_xee(
         collection, temporal_aggregation, start, end, indices_list
     )
 
-    # In fetch_xee, fix integer returns as dates
-    # in case of all data fetching cases/options.
-    if temporal_aggregation == "all":
-        # Ensure system:time_start is a proper property xee can read
-        collection = collection.map(
-            lambda img: img.set(
-                "system:time_start", img.get("system:time_start")
-            )
-        )
-    collection = collection.sort("system:time_start")
-
+    import numpy as np
+    import pandas as pd
     import xarray as xr
 
-    # xee needs projection with embedded scale, not a bare scale kwarg
     projection = ee.Projection("EPSG:4326").atScale(scale)
     default_chunks = chunks or {"time": 1, "lon": 512, "lat": 512}
 
@@ -1459,19 +1453,49 @@ def fetch_xee(
         geometry=ee_bbox,
         chunks=default_chunks,
     )
-    # Detect integer time coordinate (xee bug with temporal_aggregation='all',
-    # should be fixed, if not use the, help warning to fix locally.)
+
+    # ---------------------------------------------------------------
+    # Fix: xee returns integer time indices for temporal_aggregation="all"
+    # (and occasionally for other modes in older xee versions).
+    # Detect by checking whether the time dtype is integer.
+    # ---------------------------------------------------------------
     if np.issubdtype(ds_lazy["time"].dtype, np.integer):
         warnings.warn(
-            "xee returned integer time indices instead of dates. "
-            "Use temporal_aggregation='annual'/'monthly' to avoid this, "
-            "or reassign timestamps manually after .compute().",
-            UserWarning, stacklevel=2,
+            "fetch_xee: xee returned integer time indices (0, 1, 2 …) instead "
+            "of real timestamps — this is a known xee limitation when "
+            "temporal_aggregation='all'. Fetching real timestamps from GEE "
+            "and patching the time coordinate automatically.\n"
+            "To avoid this, use temporal_aggregation='annual' or 'monthly'.",
+            UserWarning,
+            stacklevel=2,
         )
+        # Retrieve the actual system:time_start values from the collection.
+        # getInfo() is a synchronous call — unavoidable here, but only fires
+        # when the bug is detected, not on every call.
+        try:
+            ms_list = collection.aggregate_array("system:time_start").getInfo()
+        except Exception as exc:
+            warnings.warn(
+                f"fetch_xee: Could not retrieve timestamps from GEE ({exc}). "
+                "Time coordinate will remain as integer indices. "
+                "You can fix this manually: "
+                "da['time'] = pd.to_datetime(ms_list, unit='ms')",
+                UserWarning,
+                stacklevel=2,
+            )
+            ms_list = None
+
+        if ms_list is not None:
+            n_times = ds_lazy.sizes.get("time", 0)
+            # Truncate to the number of images actually in ds_lazy
+            ms_trimmed = ms_list[:n_times]
+            real_times = pd.to_datetime(ms_trimmed, unit="ms")
+            ds_lazy = ds_lazy.assign_coords(time=real_times)
+
     # ---------------------------------------------------------------
-    # xee returns lat ascending (south → north).  Sort descending so
-    # the spatial orientation matches fetch() (north → south, standard
-    # raster convention).  sortby is lazy — no compute triggered.
+    # xee returns lat ascending (south → north). Sort descending so
+    # spatial orientation matches standard raster convention (north first).
+    # sortby is lazy — no compute triggered here.
     # ---------------------------------------------------------------
     if "lat" in ds_lazy.dims:
         ds_lazy = ds_lazy.sortby("lat", ascending=False)
@@ -1481,7 +1505,6 @@ def fetch_xee(
         da.name = index
         return da
     return ds_lazy[indices_list]
-
 
 # ---------------------------------------------------------------------------
 # Dependency guard
