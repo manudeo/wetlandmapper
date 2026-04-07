@@ -1439,22 +1439,22 @@ def fetch_xee(
         collection, temporal_aggregation, start, end, indices_list
     )
 
-    collection = collection.map(
-    lambda img: img.reproject(crs="EPSG:4326", scale=scale)
-    )
+    # collection = collection.map(
+    # lambda img: img.reproject(crs="EPSG:4326", scale=scale)
+    # )
 
     import numpy as np
     import pandas as pd
     import xarray as xr
 
-    # projection not required, added lambda mapping above)
-    # projection = ee.Projection("EPSG:4326").atScale(scale) 
+    # projection  required, not using lambda mapping above)
+    projection = ee.Projection("EPSG:4326").atScale(scale) 
     default_chunks = chunks or {"time": 1, "lon": 512, "lat": 512}
 
     ds_lazy = xr.open_dataset(
         collection,
         engine="ee",
-        # projection=projection, # NR, added lambda mapping above)
+        projection=projection,
         geometry=ee_bbox,
         chunks=default_chunks,
     )
