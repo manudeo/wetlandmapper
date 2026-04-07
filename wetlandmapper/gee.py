@@ -1447,7 +1447,8 @@ def fetch_xee(
     import pandas as pd
     import xarray as xr
 
-    # projection = ee.Projection("EPSG:4326").atScale(scale) # NR, added lambda mapping above)
+    # projection not required, added lambda mapping above)
+    # projection = ee.Projection("EPSG:4326").atScale(scale) 
     default_chunks = chunks or {"time": 1, "lon": 512, "lat": 512}
 
     ds_lazy = xr.open_dataset(
