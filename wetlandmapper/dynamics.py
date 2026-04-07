@@ -206,13 +206,13 @@ def classify_dynamics(
         delta_w   = wrecent - whistoric          # raw count in [-nYear, +nYear]
 
         # Classification conditions — same as original
-        def _is_new(dw):        
+        def _is_new(dw):
             return dw == nYear
-        def _is_lost(dw):       
+        def _is_lost(dw):
             return dw == -nYear
-        def _is_intensifying(wp, dw): 
+        def _is_intensifying(wp, dw):
             return (wp >= thresholdWet) & (dw > 0) & (dw < nYear)
-        def _is_diminishing(wp, dw):  
+        def _is_diminishing(wp, dw):
             return (wp >= thresholdWet) & (dw < 0) & (dw > -nYear)
 
     else:
@@ -240,13 +240,13 @@ def classify_dynamics(
         delta_f = f_rec - f_his                  # fraction in [-1, +1]
 
         # Classification conditions use fraction-based logic
-        def _is_new(df):         
+        def _is_new(df):
             return (f_his == 0) & (f_rec > 0)
-        def _is_lost(df):        
+        def _is_lost(df):
             return (f_his > 0)  & (f_rec == 0)
-        def _is_intensifying(wp, df): 
+        def _is_intensifying(wp, df):
             return (wp >= thresholdWet) & (df > 0) & ~_is_new(df)
-        def _is_diminishing(wp, df):  
+        def _is_diminishing(wp, df):
             return (wp >= thresholdWet) & (df < 0) & ~_is_lost(df)
 
         delta_w = delta_f   # unified name for the classification stage below
