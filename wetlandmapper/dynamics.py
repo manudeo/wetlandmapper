@@ -312,6 +312,10 @@ def classify_dynamics(
     # ------------------------------------------------------------------
     # Sanity check: no pixel should have a code outside valid set
     # ------------------------------------------------------------------
+    unexpected = (
+    set(np.unique(classification.values.astype(int)).tolist())
+    - set(DYNAMICS_CLASSES.keys())
+    )
     valid_codes = np.array(list(DYNAMICS_CLASSES.keys()), dtype=np.int8)
     # (this is a no-cost check on the non-NaN values)
     assert (
@@ -321,10 +325,7 @@ def classify_dynamics(
         ).all()
     ), (
         "classify_dynamics produced invalid class codes — this is a bug. "
-        f"Unexpected values: "
-        f"{set(np.unique(
-            classification.values.astype(int)).tolist()
-              ) - set(DYNAMICS_CLASSES.keys())}"
+        f"Unexpected values: {unexpected}"
     )
 
     # ------------------------------------------------------------------
