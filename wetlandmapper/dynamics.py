@@ -322,7 +322,7 @@ def classify_dynamics(
     ), (
         "classify_dynamics produced invalid class codes — this is a bug. "
         f"Unexpected values: "
-        f"{set(np.unique(classification.values.astype(int)).tolist()) - 
+        f"{set(np.unique(classification.values.astype(int)).tolist()) -
            set(DYNAMICS_CLASSES.keys())}"
     )
 
