@@ -349,9 +349,9 @@ def compute_aweinsh(
 
     AWEInsh = 4*(Green - SWIR1) - (0.25*NIR + 2.75*SWIR1)
 
-    A simpler form that does not require the blue band. Less effective at
-    suppressing shadow than AWEIsh, but suitable when the blue band is
-    unavailable, noisy, or affected by atmospheric haze.
+    A simplified water index that omits SWIR2 and is computationally lighter
+    than AWEIsh. Less effective at suppressing shadow, but robust in areas
+    affected by atmospheric haze or aerosol loading.
 
     Parameters
     ----------

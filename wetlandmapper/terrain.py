@@ -27,6 +27,11 @@ compute_local_range(dem, window)
     threshold (e.g. "< 30 m variation in a 5×5 window"). Maximum minus minimum
     elevation within an NxN window. A low local range indicates flat terrain.
 
+map_dem_depressions(raw_dem, filled_dem, ...)
+    Depression mapping from raw and pit-filled DEM using integer division and
+    binary reclassification (depression=1, non-depression=0), following the
+    protocol described by Sinha et al. (2017, Current Science).
+
 mask_terrain_artifacts(wetness, dem, ...)
     Combines any or all three metrics plus an elevation ceiling. Emits a warning
     if the mask retains <10% of pixels (likely thresholds are too strict).
@@ -58,6 +63,7 @@ __all__ = [
     "compute_slope",
     "compute_tpi",
     "compute_local_range",
+    "map_dem_depressions",
     "mask_terrain_artifacts",
 ]
 
@@ -263,6 +269,117 @@ def compute_local_range(
         ),
     )
     return local_range
+
+
+def map_dem_depressions(
+    raw_dem: xr.DataArray,
+    filled_dem: xr.DataArray,
+    *,
+    require_integer: bool = True,
+    apply_cleanup: bool = True,
+    cleanup_window: int = 3,
+    min_neighbours: int = 2,
+) -> xr.DataArray:
+    """Map topographic depressions from raw and pit-filled DEMs.
+
+    This implements a depression protocol used in floodplain wetland mapping:
+
+    1. Integer-divide ``raw_dem / filled_dem``.
+    2. Pixels with value 1 are unchanged terrain (no pit).
+    3. Pixels with value 0 are depressions (raw < filled).
+    4. Reclassify to a binary mask: depression=1, non-depression=0.
+
+    Parameters
+    ----------
+    raw_dem : xr.DataArray
+        Original (unfilled) DEM.
+    filled_dem : xr.DataArray
+        Pit-filled DEM created from ``raw_dem``.
+    require_integer : bool
+        If ``True`` (default), both DEMs must have integer dtype.
+    apply_cleanup : bool
+        If ``True`` (default), remove isolated one-pixel/very small speckles
+        using a neighbourhood-count filter.
+    cleanup_window : int
+        Square rolling window size for cleanup. Default 3.
+    min_neighbours : int
+        Minimum number of depression pixels (including self) within
+        ``cleanup_window`` to retain a depression pixel. Default 2.
+
+    Returns
+    -------
+    xr.DataArray
+        Binary depression mask with values {0, 1}. Name: ``"depression_mask"``.
+
+    Notes
+    -----
+    This method performs best in low-relief floodplains and may be less
+    reliable in rugged terrain. Residual speckle can still occur and may need
+    additional post-processing for specific study areas.
+
+    References
+    ----------
+    Sinha, R., et al. (2017). Protocols for Riverine Wetland Mapping and
+    Classification Using Remote Sensing and GIS. Current Science, 112(7),
+    1544-1552. http://www.jstor.org/stable/24912702
+    """
+    _check_dem(raw_dem)
+    _check_dem(filled_dem)
+
+    if raw_dem.dims != filled_dem.dims or raw_dem.shape != filled_dem.shape:
+        raise ValueError("raw_dem and filled_dem must have identical dimensions and shape.")
+
+    if require_integer:
+        if not np.issubdtype(raw_dem.dtype, np.integer):
+            raise TypeError("raw_dem must be integer dtype when require_integer=True.")
+        if not np.issubdtype(filled_dem.dtype, np.integer):
+            raise TypeError("filled_dem must be integer dtype when require_integer=True.")
+
+    if apply_cleanup:
+        if not isinstance(cleanup_window, int) or cleanup_window < 3:
+            raise ValueError("cleanup_window must be an integer >= 3.")
+        if not isinstance(min_neighbours, int) or min_neighbours < 1:
+            raise ValueError("min_neighbours must be an integer >= 1.")
+
+    raw = raw_dem.astype(np.int64)
+    filled = filled_dem.astype(np.int64)
+
+    # Integer protocol: unchanged terrain gives 1, depressions give 0.
+    ratio = xr.where(filled != 0, raw // filled, 1)
+    depression_mask = xr.where(ratio == 0, 1, 0).astype(np.uint8)
+
+    if apply_cleanup:
+        y_dim, x_dim = _spatial_dims(depression_mask)
+        neighbour_count = depression_mask.rolling(
+            {y_dim: cleanup_window, x_dim: cleanup_window},
+            center=True,
+            min_periods=1,
+        ).sum()
+        depression_mask = xr.where(
+            (depression_mask == 1) & (neighbour_count < min_neighbours),
+            0,
+            depression_mask,
+        ).astype(np.uint8)
+
+    depression_mask.name = "depression_mask"
+    depression_mask.attrs.update(
+        long_name="DEM depression mask from raw vs pit-filled DEM",
+        values="1=depression/wetland candidate, 0=flat/non-depression",
+        method="integer_division_raw_over_filled",
+        cleanup_applied=bool(apply_cleanup),
+        cleanup_window=int(cleanup_window),
+        min_neighbours=int(min_neighbours),
+    )
+
+    if _HAS_RIO:
+        try:
+            crs = raw_dem.rio.crs
+            if crs is not None:
+                depression_mask = depression_mask.rio.write_crs(crs)
+        except Exception:
+            pass
+
+    return depression_mask
 
 
 # ---------------------------------------------------------------------------

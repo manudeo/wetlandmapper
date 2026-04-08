@@ -47,6 +47,7 @@ from .indices import (
 )
 from .terrain import (
     compute_local_range,
+    map_dem_depressions,
     compute_slope,
     compute_tpi,
     mask_terrain_artifacts,
@@ -80,6 +81,7 @@ __all__ = [
     "compute_slope",
     "compute_tpi",
     "compute_local_range",
+    "map_dem_depressions",
     "mask_terrain_artifacts",
     # WCT classification
     "classify_wct_ema",

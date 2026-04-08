@@ -19,6 +19,12 @@ Wetland Cover Types (WCT)
 .. automodule:: wetlandmapper.wct
    :members:
 
+Terrain Analysis
+----------------
+
+.. automodule:: wetlandmapper.terrain
+   :members:
+
 Plotting
 --------
 

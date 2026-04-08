@@ -6,6 +6,7 @@ import xarray as xr
 
 from wetlandmapper.terrain import (
     compute_local_range,
+    map_dem_depressions,
     compute_slope,
     compute_tpi,
     mask_terrain_artifacts,
@@ -518,9 +519,104 @@ class TestCombinedTerrainFilters:
             dims=["y", "x"],
             coords={"y": np.arange(15), "x": np.arange(15)},
         )
-        result = mask_terrain_artifacts(wetness, dem, max_slope=5.0, max_elevation=1000.0)
-        # Check that some pixels are masked
+
+        result = mask_terrain_artifacts(
+            wetness,
+            dem,
+            max_slope=5.0,
+            max_elevation=1000.0,
+        )
+        assert isinstance(result, xr.DataArray)
+        assert result.shape == (15, 15)
         assert result.sum() < wetness.sum()
+
+
+class TestMapDemDepressions:
+    """Test depression mapping from raw and pit-filled DEM."""
+
+    def test_returns_binary_mask(self):
+        """Function should return a binary depression mask (0/1)."""
+        raw = xr.DataArray(
+            np.array(
+                [
+                    [10, 10, 10],
+                    [10, 8, 10],
+                    [10, 10, 10],
+                ],
+                dtype=np.int32,
+            ),
+            dims=["y", "x"],
+            coords={"y": np.arange(3), "x": np.arange(3)},
+        )
+        filled = xr.DataArray(
+            np.full((3, 3), 10, dtype=np.int32),
+            dims=["y", "x"],
+            coords={"y": np.arange(3), "x": np.arange(3)},
+        )
+
+        depressions = map_dem_depressions(raw, filled, apply_cleanup=False)
+        assert isinstance(depressions, xr.DataArray)
+        assert depressions.name == "depression_mask"
+        assert set(np.unique(depressions.values)).issubset({0, 1})
+        assert depressions.sel(y=1, x=1).item() == 1
+        assert depressions.sel(y=0, x=0).item() == 0
+
+    def test_float_dem_raises_when_integer_required(self):
+        """Input DEMs must be integer dtype when require_integer=True."""
+        raw = xr.DataArray(
+            np.random.rand(4, 4),
+            dims=["y", "x"],
+            coords={"y": np.arange(4), "x": np.arange(4)},
+        )
+        filled = xr.DataArray(
+            np.random.rand(4, 4),
+            dims=["y", "x"],
+            coords={"y": np.arange(4), "x": np.arange(4)},
+        )
+
+        with pytest.raises(TypeError):
+            map_dem_depressions(raw, filled, require_integer=True)
+
+    def test_shape_mismatch_raises(self):
+        """raw_dem and filled_dem must have identical shapes."""
+        raw = xr.DataArray(
+            np.ones((4, 4), dtype=np.int16),
+            dims=["y", "x"],
+            coords={"y": np.arange(4), "x": np.arange(4)},
+        )
+        filled = xr.DataArray(
+            np.ones((5, 4), dtype=np.int16),
+            dims=["y", "x"],
+            coords={"y": np.arange(5), "x": np.arange(4)},
+        )
+
+        with pytest.raises(ValueError):
+            map_dem_depressions(raw, filled)
+
+    def test_cleanup_removes_single_pixel_speckle(self):
+        """Cleanup should remove isolated depression pixels."""
+        raw = xr.DataArray(
+            np.full((5, 5), 10, dtype=np.int32),
+            dims=["y", "x"],
+            coords={"y": np.arange(5), "x": np.arange(5)},
+        )
+        raw.values[2, 2] = 8  # isolated pit
+        filled = xr.DataArray(
+            np.full((5, 5), 10, dtype=np.int32),
+            dims=["y", "x"],
+            coords={"y": np.arange(5), "x": np.arange(5)},
+        )
+
+        no_cleanup = map_dem_depressions(raw, filled, apply_cleanup=False)
+        with_cleanup = map_dem_depressions(
+            raw,
+            filled,
+            apply_cleanup=True,
+            cleanup_window=3,
+            min_neighbours=2,
+        )
+        assert no_cleanup.sel(y=2, x=2).item() == 1
+        assert with_cleanup.sel(y=2, x=2).item() == 0
 
     def test_combined_all_filters(self):
         """Using all filters together should work."""

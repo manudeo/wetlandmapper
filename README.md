@@ -16,8 +16,8 @@
 
 | Module | Method | Output |
 |--------|--------|--------|
-| `classify_dynamics` | Water index time-series aggregation ([Singh & Sinha 2022, *RSL*](https://doi.org/10.1080/2150704X.2021.1980919)) | 6 temporal dynamics classes |
-| `classify_wct` / `classify_wct_ema` | MNDWI + NDVI + NDTI combination ([Singh et al. 2022, *EMA*](https://doi.org/10.1007/s10661-022-10541-7)) | 5 biophysical cover types |
+| `classify_dynamics` | Water index time-series aggregation ([Singh & Sinha 2022, *RSL*](https://doi.org/10.1080/2150704X.2021.1980919)) | 7 classes (1 non-wetland + 6 dynamics) |
+| `classify_wct` / `classify_wct_ema` | MNDWI + NDVI + NDTI combination ([Singh et al. 2022, *EMA*](https://doi.org/10.1007/s10661-022-10541-7)) | 6 classes (1 non-wetland + 5 biophysical types) |
 
 Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, MODIS, etc.) and require **no labelled training data**. Data can be supplied by the user or fetched directly from **Google Earth Engine** using any Landsat mission, Sentinel-2, or MODIS.
 
@@ -27,8 +27,8 @@ WetlandMapper supports multiple water detection indices for optimal performance 
 
 - **MNDWI** (Modified NDWI): Best for most applications, uses SWIR band
 - **NDWI** (Original NDWI): Alternative using NIR band, less sensitive to built-up areas  
-- **AWEIsh** (Shadow-corrected): Superior in mountainous terrain with shadows
-- **AWEInsh** (No shadow): Simplified version when blue band unavailable
+- **AWEIsh** (Shadow-corrected): Superior in mountainous terrain with shadows; requires SWIR2 band
+- **AWEInsh** (No shadow suppression): Lighter computation without SWIR2; better in areas with atmospheric haze
 
 Use `compute_water_indices()` to compare all indices on your data.
 
@@ -71,6 +71,7 @@ WetlandMapper includes topographic analysis tools for enhanced wetland mapping:
 - **Slope**: Computes terrain slope in degrees from elevation data. Useful for identifying wetlands in flat areas (<5°) vs. steep terrain.
 - **TPI (Topographic Position Index)**: Calculates relative topographic position to distinguish plateaus from valleys. Helps identify wetland depressions.
 - **Local Range**: Computes local elevation range within a moving window. Useful for detecting micro-topographic variations in wetlands.
+- **DEM Depression Mapping**: Maps closed depressions from raw vs pit-filled DEM using integer division and reclassification (depression=1, non-depression=0), with optional isolated-pixel cleanup.
 
 ## Google Earth Engine Integration
 
@@ -156,6 +157,8 @@ wct.rio.to_raster("wetland_cover_types.tif")
 
 ### Retrieve data from Google Earth Engine
 
+**Direct download (best for small-to-medium AOIs):**
+
 ```python
 from wetlandmapper.gee import fetch
 from wetlandmapper import classify_dynamics, classify_wct_ema
@@ -165,19 +168,19 @@ aoi = "study_area/chilika.shp"           # shapefile
 # aoi = "study_area/chilika.geojson"     # GeoJSON file
 # aoi = {"type": "Polygon", ...}         # GeoJSON dict
 
-# Long-record annual composites — merges all available Landsat missions or uses MODIS
+# Long-record annual composites — LandsatAll merges all available Landsat missions (1982–present)
 mndwi = fetch(
     aoi, start="1984-01-01", end="2023-12-31",
-    sensor="LandsatAll",
+    sensor="LandsatAll",    # auto-harmonised bands across Landsat 4, 5, 7, 8, 9
     temporal_aggregation="annual",
-    use_slc_off=False,     # exclude Landsat 7 post-SLC-failure images
+    use_slc_off=False,      # exclude Landsat 7 post-SLC-failure images
 )
 dynamics = classify_dynamics(mndwi, nYear=3, thresholdWet=25, thresholdPersis=75)
 
-# MODIS-based analysis for coarser resolution studies
+# MODIS-based analysis for coarser resolution studies (500m pixels)
 mndwi_modis = fetch(
     aoi, start="2000-01-01", end="2023-12-31",
-    sensor="MODIS",
+    sensor="MODISAll",      # merged Terra & Aqua (2002–present)
     temporal_aggregation="annual",
 )
 
@@ -187,6 +190,22 @@ indices = fetch(
     sensor="Landsat8", index=["MNDWI", "NDVI", "NDTI"],
 )
 wct = classify_wct_ema(indices.isel(time=0))
+```
+
+**Lazy Dask-backed loading (best for large AOIs & long time series):**
+
+```python
+from wetlandmapper.gee import fetch_xee
+
+# Opens GEE collection as lazy xarray without downloading until compute()
+mndwi_lazy = fetch_xee(
+    aoi, start="1984-01-01", end="2023-12-31",
+    sensor="LandsatAll",
+    temporal_aggregation="annual",
+)
+
+# Process in memory-efficient chunks
+dynamics = classify_dynamics(mndwi_lazy).compute()
 ```
 
 ### Temporal aggregation
@@ -199,10 +218,26 @@ mndwi_seasonal = aggregate_time(mndwi_ts, freq="seasonal", method="median")
 mndwi_monthly  = aggregate_time(mndwi_ts, freq="monthly",  method="median")
 ```
 
+### Temporal Metrics
+
+```python
+from wetlandmapper import compute_wet_frequency
+
+# Compute the percentage of time-steps classified as wet
+wet_freq = compute_wet_frequency(mndwi, threshold=0.0)  # returns 0–100 %
+```
+
+Useful for understanding wetland persistence before classification.
+
 ### Terrain Analysis
 
 ```python
-from wetlandmapper.terrain import compute_slope, compute_tpi, mask_terrain_artifacts
+from wetlandmapper.terrain import (
+    compute_slope,
+    compute_tpi,
+    mask_terrain_artifacts,
+    map_dem_depressions,
+)
 import xarray as xr
 
 # Load elevation data
@@ -210,11 +245,25 @@ dem = xr.open_dataset("elevation.nc")["elevation"]
 
 # Compute terrain derivatives
 slope = compute_slope(dem)
-tpi = compute_tpi(dem, window_size=5)
+tpi = compute_tpi(dem, window=5)
 
-# Mask artifacts in terrain data
-dem_clean = mask_terrain_artifacts(dem, slope_threshold=30)
+# Mask steep/high terrain in a wetness layer (e.g., glaciers, permanent snow)
+wetness_clean = mask_terrain_artifacts(mndwi, dem, max_slope=5)
+
+# Depression protocol from raw vs pit-filled DEM (best for low-relief floodplains)
+raw_dem = xr.open_dataset("dem_raw.nc")["elevation"].astype("int32")
+filled_dem = xr.open_dataset("dem_filled.nc")["elevation"].astype("int32")
+depression_mask = map_dem_depressions(
+    raw_dem,
+    filled_dem,
+    apply_cleanup=True,
+    cleanup_window=3,
+    min_neighbours=2,
+)
 ```
+
+This depression workflow is most reliable in flat floodplain settings and may produce spurious isolated pixels without cleanup.
+It follows the DEM depression protocol described by Sinha et al. (2017, *Current Science*): http://www.jstor.org/stable/24912702
 
 ### Visualisation
 
@@ -241,8 +290,11 @@ All Landsat collections are Collection 2 Level-2 surface reflectance.
 | `"Landsat7"` | LE07/C02/T1_L2 | 1999–2022 | ETM+; SLC failure 2003-06-01 |
 | `"Landsat8"` | LC08/C02/T1_L2 | 2013–present | OLI **(default)** |
 | `"Landsat9"` | LC09/C02/T1_L2 | 2021–present | OLI-2 |
-| `"LandsatAll"` | all 5 merged | 1982–present | auto-harmonised band names |
+| `"LandsatAll"` | all 5 merged | 1982–present | auto-harmonised band names across all missions |
 | `"Sentinel2"` | S2_SR_HARMONIZED | 2015–present | MSI |
+| `"MODIS_Terra"` | MOD09A1 | 2000–present | 500m resolution |
+| `"MODIS_Aqua"` | MYD09A1 | 2002–present | 500m resolution |
+| `"MODISAll"` | Terra + Aqua merged | 2002–present | best coverage for MODIS |
 
 `"Landsat"` is a backward-compatible alias for `"Landsat8"`.
 
@@ -281,6 +333,9 @@ If you use `WetlandMapper` in your research, please cite the two underlying meth
 
 **Wetland Cover Types:**
 > Singh, M., Allaka, S., Gupta, P. K., Patel, J. G., & Sinha, R. (2022). Deriving wetland-cover types (WCTs) from integration of multispectral indices based on Earth observation data. *Environmental Monitoring and Assessment*, 194(12), 878. https://doi.org/10.1007/s10661-022-10541-7
+
+**Topographic depression protocol for riverine wetland mapping:**
+> Sinha, R., Saxena, S., & **Singh, M.** (2017). Protocols for Riverine Wetland Mapping and Classification Using Remote Sensing and GIS. *Current Science*, 112(7), 1544-1552. http://www.jstor.org/stable/24912702
 
 **Software (JOSS paper — pending publication):**
 > Singh, M. (2026). WetlandMapper: A Python package for automatic wetland mapping, dynamics classification, and cover-type characterisation. *Journal of Open Source Software*.
