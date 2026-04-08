@@ -319,7 +319,7 @@ def map_dem_depressions(
 
     References
     ----------
-    Sinha, R., et al. (2017). Protocols for Riverine Wetland Mapping and
+    Sinha, R., Saxena, S., & Singh, M. (2017). Protocols for Riverine Wetland Mapping and
     Classification Using Remote Sensing and GIS. Current Science, 112(7),
     1544-1552. http://www.jstor.org/stable/24912702
     """
@@ -327,7 +327,9 @@ def map_dem_depressions(
     _check_dem(filled_dem)
 
     if raw_dem.dims != filled_dem.dims or raw_dem.shape != filled_dem.shape:
-        raise ValueError("raw_dem and filled_dem must have identical dimensions and shape.")
+        raise ValueError(
+            "raw_dem and filled_dem must have identical dimensions and shape."
+        )
 
     if require_integer:
         if not np.issubdtype(raw_dem.dtype, np.integer):
