@@ -39,7 +39,7 @@ The second framework is a **Wetland Cover Type (WCT) classification** method
 biophysical surface composition of wetland pixels into stable, ecologically interpretable
 cover types including open clear water, turbid water, aquatic vegetation, and moist soil.
 
-The package now includes comprehensive **spectral index computation** supporting seven
+The package now includes comprehensive **spectral index computation** supporting six
 indices (MNDWI, NDWI, NDVI, NDTI, AWEIsh, AWEInsh) for flexible water detection and
 vegetation analysis, a **terrain analysis module** for topographic corrections and
 artifact masking, and **visualisation utilities** for interactive plotting of results.
@@ -93,7 +93,7 @@ occurrence globally at 30 m resolution but does not distinguish wetland surface 
 Machine-learning approaches achieve high classification accuracy but require labelled
 training data that are rarely available at regional scales [@mahdavi2018remote; @slagter2020mapping].
 SAR-based methods handle cloud cover but require specialist pre-processing workflows
-[@tsyganskaya2018sar] and site-specific thresholding. Most tools lack comprehensive
+and site-specific thresholding. Most tools lack comprehensive
 spectral index libraries or terrain correction capabilities needed for robust wetland
 analysis across diverse landscapes.
 
@@ -163,7 +163,7 @@ code method (`classify_wct_ema`), and an improved continuous-threshold variant
 
 ## Spectral Index Computation
 
-The package provides comprehensive spectral index computation supporting seven indices
+The package provides comprehensive spectral index computation supporting six indices
 for flexible water detection and vegetation analysis:
 
 - **MNDWI**: Modified Normalised Difference Water Index [@xu2006modification]
@@ -186,8 +186,15 @@ position can confound spectral signatures. Functions include:
 - **Slope computation**: Local slope calculation from digital elevation models
 - **Topographic Position Index (TPI)**: Relative topographic position within a local neighborhood
 - **Local range**: Local elevation variability for terrain complexity assessment
+- **DEM depression mapping**: Identification of closed depressions from raw versus
+  pit-filled DEMs using integer division and binary reclassification, following the
+  riverine wetland mapping protocol of @sinha2017protocols
 - **Terrain artifact masking**: Automated masking of steep slopes that may cause
   classification errors in wetland detection
+
+This terrain functionality therefore supports both topographic false-positive reduction
+in rugged settings and depression-focused wetland candidate mapping in low-relief
+floodplains.
 
 ## Data Acquisition and Temporal Aggregation
 
@@ -302,6 +309,10 @@ Nal Sarovar (semi-arid) — demonstrating that the WCTs are stable in space and 
 meaning comparable biophysical conditions correspond to the same WCT irrespective of
 geographic location.
 
+The depression-mapping terrain workflow follows the riverine wetland protocol of
+@sinha2017protocols, in which raw and pit-filled DEMs are compared to delineate closed
+depressions that can act as wetland candidates in flat floodplain environments.
+
 By unifying both workflows in a single, tested Python package with flexible data
 ingestion, `WetlandMapper` enables application of these frameworks globally in fully
 scripted, reproducible workflows, without dependence on proprietary GEE or ArcGIS
@@ -318,7 +329,7 @@ an AI language model, for tasks including code scaffolding, packaging
 configuration, continuous integration setup, docstring writing, and
 debugging. The scientific methodology, classification algorithms, spectral
 index thresholds, and validation are based entirely on the author's prior
-peer-reviewed work [@singh2021hydrogeomorphic; @singh2022basin; @singh2022deriving], and all
+peer-reviewed work [@sinha2017protocols; @singh2021hydrogeomorphic; @singh2022basin; @singh2022deriving], and all
 scientific content, design decisions, and results presented here are the
 author's own.
 
