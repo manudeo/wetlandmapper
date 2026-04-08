@@ -47,9 +47,9 @@ from .indices import (
 )
 from .terrain import (
     compute_local_range,
-    map_dem_depressions,
     compute_slope,
     compute_tpi,
+    map_dem_depressions,
     mask_terrain_artifacts,
 )
 from .wct import (
