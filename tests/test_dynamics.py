@@ -202,6 +202,36 @@ class TestClassifyDynamics:
         assert "thresholdPersis" in result.attrs
         assert "class_codes" in result.attrs
 
+    def test_invalid_nan_policy_raises(self, mndwi_mixed):
+        """Unknown nan_policy should raise ValueError."""
+        with pytest.raises(ValueError, match="nan_policy"):
+            classify_dynamics(mndwi_mixed, nan_policy="bad_mode")
+
+    def test_valid_nan_policy_with_min_valid_obs_masks_sparse_pixels(self):
+        """valid mode with min_valid_obs should mask insufficiently observed pixels."""
+        times = pd.date_range("2020-01-01", periods=6, freq="D")
+        data = np.full((6, 2, 2), np.nan, dtype=float)
+        data[:, 0, 0] = [0.2, 0.3, 0.4, 0.2, 0.1, 0.2]  # 6 valid obs
+        data[:, 0, 1] = [0.2, np.nan, np.nan, np.nan, np.nan, np.nan]  # 1 valid obs
+        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+
+        result = classify_dynamics(
+            da,
+            nYear=3,
+            nan_policy="valid",
+            min_valid_obs=3,
+            thresholdWet=25,
+            thresholdPersis=75,
+        )
+        assert np.isnan(result.sel(y=0, x=1).item())
+        assert not np.isnan(result.sel(y=0, x=0).item())
+
+    def test_deprecated_mndwi_threshold_alias_warns(self, mndwi_all_wet):
+        """Deprecated alias should emit warning and still run."""
+        with pytest.warns(DeprecationWarning):
+            result = classify_dynamics(mndwi_all_wet, nYear=3, mndwi_threshold=0.0)
+        assert isinstance(result, xr.DataArray)
+
 
 class TestComputeWetFrequency:
     def test_all_wet_gives_100(self, mndwi_all_wet):
@@ -231,6 +261,32 @@ class TestComputeWetFrequency:
     def test_output_attributes(self, mndwi_all_wet):
         freq = compute_wet_frequency(mndwi_all_wet)
         assert "long_name" in freq.attrs
+
+    def test_invalid_nan_policy_raises(self, mndwi_mixed):
+        """Unknown nan_policy should raise ValueError."""
+        with pytest.raises(ValueError, match="nan_policy"):
+            compute_wet_frequency(mndwi_mixed, nan_policy="bad_mode")
+
+    def test_valid_nan_policy_handles_nan_observations(self):
+        """valid mode should use only non-NaN timesteps in denominator."""
+        times = pd.date_range("2020-01-01", periods=4, freq="D")
+        data = np.array(
+            [
+                [[0.1]],
+                [[np.nan]],
+                [[0.2]],
+                [[np.nan]],
+            ]
+        )
+        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+        freq = compute_wet_frequency(da, water_threshold=0.0, nan_policy="valid")
+        assert np.isclose(float(freq.values[0, 0]), 100.0)
+
+    def test_deprecated_mndwi_threshold_alias_warns(self, mndwi_all_wet):
+        """Deprecated alias should emit warning and still run."""
+        with pytest.warns(DeprecationWarning):
+            freq = compute_wet_frequency(mndwi_all_wet, mndwi_threshold=0.0)
+        assert isinstance(freq, xr.DataArray)
 
 
 class TestAggregateTime:

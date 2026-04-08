@@ -93,6 +93,7 @@ source = ["wetlandmapper"]
 omit   = [
     "wetlandmapper/gee.py",      # GEE requires network; excluded from unit coverage
     "wetlandmapper/plotting.py", # matplotlib rendering; excluded from unit coverage
+    "wetlandmapper/dynamics_old.py", # deprecated legacy implementation
 ]
 
 [tool.coverage.report]
