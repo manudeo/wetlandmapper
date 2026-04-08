@@ -80,6 +80,7 @@ include = ["wetlandmapper*"]
 
 [tool.setuptools_scm]
 write_to = "wetlandmapper/_version.py"
+local_scheme = "no-local-version"
 
 # ---------------------------------------------------------------------------
 # Testing
