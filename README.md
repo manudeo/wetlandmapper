@@ -10,7 +10,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 
-**Automatic wetland detection, temporal dynamics classification, and Wetland Cover Type characterisation from multispectral satellite time-series data.**
+**A climate-adaptive automatic wetland detection, temporal dynamics classification, and Wetland Cover Type characterisation from multispectral satellite time-series data.**
 
 `WetlandMapper` is a Python library that operationalises two peer-reviewed remote-sensing frameworks:
 
@@ -18,6 +18,8 @@
 |--------|--------|--------|
 | `classify_dynamics` | Water index time-series aggregation ([Singh & Sinha 2022, *RSL*](https://doi.org/10.1080/2150704X.2021.1980919)) | 7 classes (1 non-wetland + 6 dynamics) |
 | `classify_wct` / `classify_wct_ema` | MNDWI + NDVI + NDTI combination ([Singh et al. 2022, *EMA*](https://doi.org/10.1007/s10661-022-10541-7)) | 6 classes (1 non-wetland + 5 biophysical types) |
+
+The mapping algorithm is climate- and terrian-adaptive, based on methods developed in Singh and Tooth (in prep.). 
 
 Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, MODIS, etc.) and require **no labelled training data**. Data can be supplied by the user or fetched directly from **Google Earth Engine** using any Landsat mission, Sentinel-2, or MODIS.
 
