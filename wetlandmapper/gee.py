@@ -240,6 +240,7 @@ _SEASONS: dict[str, tuple[list[int], int, int]] = {
 }
 
 _VALID_AGGREGATIONS = {"all", "annual", "monthly", "seasonal"}
+_VALID_INDICES = {"MNDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
 _VALID_SINGLE_SENSORS = set(_COLLECTION_ID.keys()) | set(_SENSOR_ALIASES.keys())
 _ALL_VALID_SENSORS = _VALID_SINGLE_SENSORS | {"LandsatAll", "MODISAll"}
 
@@ -813,6 +814,113 @@ def _build_single_sensor_collection(
     return collection, bm
 
 
+def _build_processed_collection(
+    aoi: "dict | str",
+    start: str,
+    end: str,
+    sensor: str,
+    index: "str | Sequence[str]",
+    max_cloud_cover: float,
+    temporal_aggregation: str,
+    use_slc_off: bool,
+    climate_adaptive: bool,
+    min_precip_mm: float,
+    min_temp_c: float,
+    hydroperiod_months: int,
+    wetness_index: str,
+    wetness_threshold: float,
+    dem_mask: bool,
+    max_slope_deg: float | None,
+    max_tpi_m: float | None,
+    tpi_window_px: int,
+    max_local_range_m: float | None,
+    local_range_window_px: int,
+    max_elevation_m: float | None,
+) -> tuple["ee.ImageCollection", "ee.Geometry", list[str]]:
+    """Build and process collection for fetch/fetch_xee with shared behavior."""
+    sensor = _resolve_sensor(sensor)
+
+    indices_list = [index] if isinstance(index, str) else list(index)
+    bad = set(indices_list) - _VALID_INDICES
+    if bad:
+        raise ValueError(
+            f"Unknown index/indices: {bad}. Valid: {_VALID_INDICES}"
+        )
+
+    if climate_adaptive and wetness_index not in indices_list:
+        raise ValueError(
+            "wetness_index must be included in index when climate_adaptive=True. "
+            f"Got wetness_index={wetness_index!r}, index={indices_list!r}."
+        )
+
+    ee_geom = _parse_aoi(aoi)
+
+    # Build collection (merged or single sensor)
+    if sensor == "LandsatAll":
+        collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
+    elif sensor == "MODISAll":
+        collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
+    elif sensor in ("MODIS_Terra", "MODIS_Aqua"):
+        bm = _BAND_MAP["MODIS_500m"]
+        sf = _SCALE_FACTOR["MODIS_500m"]
+        raw = (
+            ee.ImageCollection(_COLLECTION_ID[sensor])
+            .filterBounds(ee_geom)
+            .filterDate(start, end)
+        )
+        raw = raw.map(_mask_modis_clouds)
+        raw = raw.map(
+            lambda img: (
+                img.multiply(sf["scale"])
+                .copyProperties(img, ["system:time_start"])
+            )
+        )
+        collection = raw.map(lambda img: _add_indices(img, bm))
+    else:
+        collection, _ = _build_single_sensor_collection(
+            sensor, ee_geom, start, end, max_cloud_cover, use_slc_off
+        )
+
+    # Server-side DEM terrain mask
+    if dem_mask:
+        terrain_mask = _build_dem_mask(
+            ee_geom,
+            max_slope_deg=max_slope_deg,
+            max_tpi_m=max_tpi_m,
+            tpi_window_px=tpi_window_px,
+            max_local_range_m=max_local_range_m,
+            local_range_window_px=local_range_window_px,
+            max_elevation_m=max_elevation_m,
+        )
+        collection = collection.map(lambda img: img.updateMask(terrain_mask))
+
+    # Keep only requested index bands
+    collection = collection.select(indices_list)
+
+    # Server-side temporal compositing
+    if climate_adaptive:
+        monthly = _build_composites(
+            collection, "monthly", start, end, indices_list
+        )
+        collection = _build_climate_adaptive_composites(
+            monthly,
+            start=start,
+            end=end,
+            index_bands=indices_list,
+            wetness_index=wetness_index,
+            wetness_threshold=wetness_threshold,
+            min_precip_mm=min_precip_mm,
+            min_temp_c=min_temp_c,
+            hydroperiod_months=hydroperiod_months,
+        )
+    else:
+        collection = _build_composites(
+            collection, temporal_aggregation, start, end, indices_list
+        )
+
+    return collection, ee_geom, indices_list
+
+
 def _ee_image_to_dataarray(
     image: "ee.Image",
     ee_geom: "ee.Geometry",
@@ -1144,82 +1252,28 @@ def fetch(
     except Exception:
         init(project=project)
 
-    sensor = _resolve_sensor(sensor)
-
-    indices_list = [index] if isinstance(index, str) else list(index)
-    _VALID_INDICES = {"MNDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
-    bad = set(indices_list) - _VALID_INDICES
-    if bad:
-        raise ValueError(
-            f"Unknown index/indices: {bad}. Valid: {_VALID_INDICES}"
-        )
-
-    ee_geom = _parse_aoi(aoi)
-
-    # Build collection (merged or single sensor)
-    if sensor == "LandsatAll":
-        collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
-    elif sensor == "MODISAll":
-        collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
-    elif sensor in ("MODIS_Terra", "MODIS_Aqua"):
-        bm = _BAND_MAP["MODIS_500m"]
-        sf = _SCALE_FACTOR["MODIS_500m"]
-        raw = (
-            ee.ImageCollection(_COLLECTION_ID[sensor])
-            .filterBounds(ee_geom)
-            .filterDate(start, end)
-        )
-        raw = raw.map(_mask_modis_clouds)
-        raw = raw.map(
-            lambda img: (
-                img.multiply(sf["scale"])
-                   .copyProperties(img, ["system:time_start"])
-            )
-        )
-        collection = raw.map(lambda img: _add_indices(img, bm))
-    else:
-        collection, _ = _build_single_sensor_collection(
-            sensor, ee_geom, start, end, max_cloud_cover, use_slc_off
-        )
-
-    # ── Server-side DEM terrain mask ────────────────────────────────────────
-    if dem_mask:
-        terrain_mask = _build_dem_mask(
-            ee_geom,
-            max_slope_deg=max_slope_deg,
-            max_tpi_m=max_tpi_m,
-            tpi_window_px=tpi_window_px,
-            max_local_range_m=max_local_range_m,
-            local_range_window_px=local_range_window_px,
-            max_elevation_m=max_elevation_m,
-        )
-        collection = collection.map(
-            lambda img: img.updateMask(terrain_mask)
-        )
-
-    # Keep only requested index bands
-    collection = collection.select(indices_list)
-
-    # Server-side temporal compositing
-    if climate_adaptive:
-        # Monthly composites first (needed as input to climate-adaptive fn)
-        monthly = _build_composites(
-            collection, "monthly", start, end, indices_list
-        )
-        collection = _build_climate_adaptive_composites(
-            monthly,
-            start=start,
-            end=end,
-            index_bands=indices_list,
-            wetness_index=wetness_index,
-            wetness_threshold=wetness_threshold,
-            min_precip_mm=min_precip_mm,
-            min_temp_c=min_temp_c,
-            hydroperiod_months=hydroperiod_months,
-        )
-    else:
-        collection = _build_composites(
-        collection, temporal_aggregation, start, end, indices_list
+    collection, ee_geom, indices_list = _build_processed_collection(
+        aoi=aoi,
+        start=start,
+        end=end,
+        sensor=sensor,
+        index=index,
+        max_cloud_cover=max_cloud_cover,
+        temporal_aggregation=temporal_aggregation,
+        use_slc_off=use_slc_off,
+        climate_adaptive=climate_adaptive,
+        min_precip_mm=min_precip_mm,
+        min_temp_c=min_temp_c,
+        hydroperiod_months=hydroperiod_months,
+        wetness_index=wetness_index,
+        wetness_threshold=wetness_threshold,
+        dem_mask=dem_mask,
+        max_slope_deg=max_slope_deg,
+        max_tpi_m=max_tpi_m,
+        tpi_window_px=tpi_window_px,
+        max_local_range_m=max_local_range_m,
+        local_range_window_px=local_range_window_px,
+        max_elevation_m=max_elevation_m,
     )
 
     n_images = collection.size().getInfo()
@@ -1296,12 +1350,25 @@ def fetch_xee(
     start: str,
     end: str,
     sensor: str = "Landsat8",
-    index: "str | list[str]" = "MNDWI",
+    index: "str | Sequence[str]" = "MNDWI",
     scale: int = 30,
     max_cloud_cover: float = 20.0,
     temporal_aggregation: str = "all",
     use_slc_off: bool = False,
     project: str | None = None,
+    climate_adaptive: bool = False,
+    min_precip_mm: float = 20.0,
+    min_temp_c: float = 5.0,
+    hydroperiod_months: int = 1,
+    wetness_index: str = "MNDWI",
+    wetness_threshold: float = 0.0,
+    dem_mask: bool = False,
+    max_slope_deg: float | None = 5.0,
+    max_tpi_m: float | None = None,
+    tpi_window_px: int = 5,
+    max_local_range_m: float | None = None,
+    local_range_window_px: int = 5,
+    max_elevation_m: float | None = None,
     chunks: dict | None = None,
 ) -> "xr.DataArray | xr.Dataset":
     """Retrieve spectral indices from GEE as a lazy Dask-backed xarray via xee.
@@ -1315,7 +1382,8 @@ def fetch_xee(
     sensor : str
         Sensor key — see :func:`fetch` for the full list.  Default ``"Landsat8"``.
     index : str or list of str
-        One or more of ``"MNDWI"``, ``"NDVI"``, ``"NDTI"``.
+        One or more of ``"MNDWI"``, ``"NDVI"``, ``"NDTI"``,
+        ``"AWEIsh"``, ``"AWEInsh"``.
         Single str → DataArray; list → Dataset.
     scale : int
         Pixel resolution in metres.  Default 30.
@@ -1337,6 +1405,11 @@ def fetch_xee(
         Include Landsat 7 SLC-off scenes.  Default ``False``.
     project : str, optional
         GEE cloud project ID.
+    climate_adaptive, min_precip_mm, min_temp_c, hydroperiod_months,
+    wetness_index, wetness_threshold, dem_mask, max_slope_deg,
+    max_tpi_m, tpi_window_px, max_local_range_m,
+    local_range_window_px, max_elevation_m
+        Same semantics as :func:`fetch`.
     chunks : dict, optional
         Dask chunk sizes, e.g. ``{"time": 1, "lon": 512, "lat": 512}``.
 
@@ -1388,35 +1461,35 @@ def fetch_xee(
     except Exception:
         init(project=project)
 
-    sensor = _resolve_sensor(sensor)
-
-    indices_list = [index] if isinstance(index, str) else list(index)
-    bad = set(indices_list) - {"MNDWI", "NDVI", "NDTI"}
-    if bad:
-        raise ValueError(f"Unknown index/indices: {bad}. Valid: MNDWI, NDVI, NDTI")
-
-    ee_geom = _parse_aoi(aoi)
+    collection, ee_geom, indices_list = _build_processed_collection(
+        aoi=aoi,
+        start=start,
+        end=end,
+        sensor=sensor,
+        index=index,
+        max_cloud_cover=max_cloud_cover,
+        temporal_aggregation=temporal_aggregation,
+        use_slc_off=use_slc_off,
+        climate_adaptive=climate_adaptive,
+        min_precip_mm=min_precip_mm,
+        min_temp_c=min_temp_c,
+        hydroperiod_months=hydroperiod_months,
+        wetness_index=wetness_index,
+        wetness_threshold=wetness_threshold,
+        dem_mask=dem_mask,
+        max_slope_deg=max_slope_deg,
+        max_tpi_m=max_tpi_m,
+        tpi_window_px=tpi_window_px,
+        max_local_range_m=max_local_range_m,
+        local_range_window_px=local_range_window_px,
+        max_elevation_m=max_elevation_m,
+    )
 
     # xee requires a bounding box — arbitrary polygon → one-pixel bug
     bounds_info = ee_geom.bounds().getInfo()["coordinates"][0]
     lons = [c[0] for c in bounds_info]
     lats = [c[1] for c in bounds_info]
     ee_bbox = ee.Geometry.BBox(min(lons), min(lats), max(lons), max(lats))
-
-    # Build and composite the collection
-    if sensor == "LandsatAll":
-        collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
-    elif sensor == "MODISAll":
-        collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
-    else:
-        collection, _ = _build_single_sensor_collection(
-            sensor, ee_geom, start, end, max_cloud_cover, use_slc_off
-        )
-
-    collection = collection.select(indices_list)
-    collection = _build_composites(
-        collection, temporal_aggregation, start, end, indices_list
-    )
 
     import numpy as np
     import pandas as pd
