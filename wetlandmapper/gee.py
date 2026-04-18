@@ -577,7 +577,8 @@ def _make_nan_image(bands: list[str], timestamp: "ee.Number") -> "ee.Image":
     img = ee.Image.cat([ee.Image.constant(0).rename(b) for b in bands]).updateMask(
         ee.Image.constant(0)
     )  # mask = 0 everywhere → all pixels masked
-    return img.set("system:time_start", timestamp)
+    # Explicit float cast ensures type consistency with real bands
+    return img.float().set("system:time_start", timestamp)
 
 
 def _build_composites(
@@ -1903,6 +1904,7 @@ def _build_climate_adaptive_composites(
         composite = (
             composite.select(index_bands)
                      .updateMask(hydro_mask)        # apply hydroperiod mask
+                     .float()                       # explicit cast to float to ensure type consistency
                      .set("system:time_start",
                           ee.Date.fromYMD(yr, 7, 1).millis())
                      .set("year", yr)
