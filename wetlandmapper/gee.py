@@ -240,7 +240,7 @@ _SEASONS: dict[str, tuple[list[int], int, int]] = {
 }
 
 _VALID_AGGREGATIONS = {"all", "annual", "monthly", "seasonal"}
-_VALID_INDICES = {"MNDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
+_VALID_INDICES = {"MNDWI", "NDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
 _VALID_SINGLE_SENSORS = set(_COLLECTION_ID.keys()) | set(_SENSOR_ALIASES.keys())
 _ALL_VALID_SENSORS = _VALID_SINGLE_SENSORS | {"LandsatAll", "MODISAll"}
 
@@ -316,11 +316,12 @@ def _mask_modis_clouds(image: "ee.Image") -> "ee.Image":
 
 
 def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
-    """Add MNDWI, NDVI, and NDTI bands to a GEE image using normalizedDifference.
+    """Add supported index bands to a GEE image using normalizedDifference.
 
     Indices are evaluated server-side as (A - B) / (A + B).
 
     MNDWI = (Green - SWIR1) / (Green + SWIR1)   — sensitive to open water
+    NDWI  = (Green - NIR  ) / (Green + NIR  )   — classic open-water index
     NDVI  = (NIR   - Red  ) / (NIR   + Red  )   — sensitive to green vegetation
     NDTI  = (Red   - Green) / (Red   + Green)   — sensitive to turbid / sediment water
 
@@ -330,11 +331,13 @@ def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
     | Index | TM / ETM+             | OLI (L8/L9)           | Sentinel-2        |
     +-------+-----------------------+-----------------------+-------------------+
     | MNDWI | (SR_B2 - SR_B5) / sum | (SR_B3 - SR_B6) / sum | (B3 - B11) / sum  |
+    | NDWI  | (SR_B2 - SR_B4) / sum | (SR_B3 - SR_B5) / sum | (B3 - B8 ) / sum  |
     | NDVI  | (SR_B4 - SR_B3) / sum | (SR_B5 - SR_B4) / sum | (B8 - B4 ) / sum  |
     | NDTI  | (SR_B3 - SR_B2) / sum | (SR_B4 - SR_B3) / sum | (B4 - B3 ) / sum  |
     +-------+-----------------------+-----------------------+-------------------+
     """
     mndwi = image.normalizedDifference([bands["green"], bands["swir"]]).rename("MNDWI")
+    ndwi = image.normalizedDifference([bands["green"], bands["nir"]]).rename("NDWI")
     ndvi = image.normalizedDifference([bands["nir"], bands["red"]]).rename("NDVI")
     ndti = image.normalizedDifference([bands["red"], bands["green"]]).rename("NDTI")
     # AWEIsh = Blue + 2.5*Green - 1.5*(NIR + SWIR1) - 0.25*SWIR2
@@ -362,7 +365,36 @@ def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
         )
         .rename("AWEInsh")
     )
-    return image.addBands([mndwi, ndvi, ndti, aweish, aweinsh])
+    return image.addBands([mndwi, ndwi, ndvi, ndti, aweish, aweinsh])
+
+
+def _add_custom_indices(
+    image: "ee.Image",
+    bands: dict[str, str],
+    custom_indices: dict[str, str],
+) -> "ee.Image":
+    """Add user-defined index bands from ee.Image.expression formulas.
+
+    Formula symbols are the harmonised band names:
+    ``blue``, ``green``, ``red``, ``nir``, ``swir`` (alias ``swir1``),
+    ``swir2``, and ``qa``.
+    """
+    variables = {
+        "blue": image.select(bands["blue"]),
+        "green": image.select(bands["green"]),
+        "red": image.select(bands["red"]),
+        "nir": image.select(bands["nir"]),
+        "swir": image.select(bands["swir"]),
+        "swir1": image.select(bands["swir"]),
+        "swir2": image.select(bands["swir2"]),
+        "qa": image.select(bands["qa"]),
+    }
+
+    new_bands = [
+        image.expression(formula, variables).rename(name)
+        for name, formula in custom_indices.items()
+    ]
+    return image.addBands(new_bands)
 
 
 
@@ -820,6 +852,7 @@ def _build_processed_collection(
     end: str,
     sensor: str,
     index: "str | Sequence[str]",
+    custom_indices: dict[str, str] | None,
     max_cloud_cover: float,
     temporal_aggregation: str,
     use_slc_off: bool,
@@ -840,11 +873,33 @@ def _build_processed_collection(
     """Build and process collection for fetch/fetch_xee with shared behavior."""
     sensor = _resolve_sensor(sensor)
 
+    if custom_indices is None:
+        custom_indices = {}
+    if not isinstance(custom_indices, dict):
+        raise TypeError("custom_indices must be a dict[str, str] or None.")
+
+    for name, formula in custom_indices.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Each custom index name must be a non-empty string.")
+        if not isinstance(formula, str) or not formula.strip():
+            raise ValueError(
+                f"Formula for custom index {name!r} must be a non-empty string."
+            )
+
+    reserved = set(custom_indices).intersection(_VALID_INDICES)
+    if reserved:
+        raise ValueError(
+            "custom_indices cannot redefine built-in indices. "
+            f"Reserved names: {sorted(reserved)}"
+        )
+
     indices_list = [index] if isinstance(index, str) else list(index)
-    bad = set(indices_list) - _VALID_INDICES
+    valid_indices = _VALID_INDICES.union(set(custom_indices))
+    bad = set(indices_list) - valid_indices
     if bad:
         raise ValueError(
-            f"Unknown index/indices: {bad}. Valid: {_VALID_INDICES}"
+            f"Unknown index/indices: {bad}. "
+            f"Valid built-ins: {_VALID_INDICES}; custom: {set(custom_indices)}"
         )
 
     if climate_adaptive and wetness_index not in indices_list:
@@ -854,12 +909,15 @@ def _build_processed_collection(
         )
 
     ee_geom = _parse_aoi(aoi)
+    sensor_bands: dict[str, str]
 
     # Build collection (merged or single sensor)
     if sensor == "LandsatAll":
         collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
+        sensor_bands = _BAND_MAP["_harmonised"]
     elif sensor == "MODISAll":
         collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
+        sensor_bands = _BAND_MAP["MODIS_500m"]
     elif sensor in ("MODIS_Terra", "MODIS_Aqua"):
         bm = _BAND_MAP["MODIS_500m"]
         sf = _SCALE_FACTOR["MODIS_500m"]
@@ -876,9 +934,15 @@ def _build_processed_collection(
             )
         )
         collection = raw.map(lambda img: _add_indices(img, bm))
+        sensor_bands = bm
     else:
-        collection, _ = _build_single_sensor_collection(
+        collection, sensor_bands = _build_single_sensor_collection(
             sensor, ee_geom, start, end, max_cloud_cover, use_slc_off
+        )
+
+    if custom_indices:
+        collection = collection.map(
+            lambda img: _add_custom_indices(img, sensor_bands, custom_indices)
         )
 
     # Server-side DEM terrain mask
@@ -1081,6 +1145,7 @@ def fetch(
     end: str,
     sensor: str = "Landsat8",
     index: "str | Sequence[str]" = "MNDWI",
+    custom_indices: dict[str, str] | None = None,
     scale: int = 30,
     max_cloud_cover: float = 20.0,
     temporal_aggregation: str = "all",
@@ -1127,8 +1192,18 @@ def fetch(
         ``"MODIS_Terra"``, ``"MODIS_Aqua"``, ``"MODISAll"``.
         ``"Landsat"`` is an alias for ``"Landsat8"``.
     index : str or list of str
-        One or more of ``"MNDWI"``, ``"NDVI"``, ``"NDTI"``.
+        One or more of ``"MNDWI"``, ``"NDWI"``, ``"NDVI"``, ``"NDTI"``,
+        ``"AWEIsh"``, ``"AWEInsh"``.
         Single str → DataArray; list → Dataset (both with time dim).
+    custom_indices : dict[str, str], optional
+        User-defined index formulas evaluated server-side via
+        ``ee.Image.expression``. Dictionary keys are output band names and
+        values are expression strings. Available formula symbols are
+        ``blue``, ``green``, ``red``, ``nir``, ``swir`` (alias ``swir1``),
+        ``swir2``, and ``qa``.
+
+        Example: ``{"NDSI": "(green - swir) / (green + swir)"}``.
+        To request a custom index, include its name in ``index``.
     scale : int
         Spatial resolution in metres.  Default 30 (Landsat native).
     max_cloud_cover : float
@@ -1258,6 +1333,7 @@ def fetch(
         end=end,
         sensor=sensor,
         index=index,
+        custom_indices=custom_indices,
         max_cloud_cover=max_cloud_cover,
         temporal_aggregation=temporal_aggregation,
         use_slc_off=use_slc_off,
@@ -1351,6 +1427,7 @@ def fetch_xee(
     end: str,
     sensor: str = "Landsat8",
     index: "str | Sequence[str]" = "MNDWI",
+    custom_indices: dict[str, str] | None = None,
     scale: int = 30,
     max_cloud_cover: float = 20.0,
     temporal_aggregation: str = "all",
@@ -1382,9 +1459,18 @@ def fetch_xee(
     sensor : str
         Sensor key — see :func:`fetch` for the full list.  Default ``"Landsat8"``.
     index : str or list of str
-        One or more of ``"MNDWI"``, ``"NDVI"``, ``"NDTI"``,
+        One or more of ``"MNDWI"``, ``"NDWI"``, ``"NDVI"``, ``"NDTI"``,
         ``"AWEIsh"``, ``"AWEInsh"``.
         Single str → DataArray; list → Dataset.
+    custom_indices : dict[str, str], optional
+        User-defined index formulas evaluated server-side via
+        ``ee.Image.expression``. Dictionary keys are output band names and
+        values are expression strings. Available formula symbols are
+        ``blue``, ``green``, ``red``, ``nir``, ``swir`` (alias ``swir1``),
+        ``swir2``, and ``qa``.
+
+        Example: ``{"NDSI": "(green - swir) / (green + swir)"}``.
+        To request a custom index, include its name in ``index``.
     scale : int
         Pixel resolution in metres.  Default 30.
     max_cloud_cover : float
@@ -1467,6 +1553,7 @@ def fetch_xee(
         end=end,
         sensor=sensor,
         index=index,
+        custom_indices=custom_indices,
         max_cloud_cover=max_cloud_cover,
         temporal_aggregation=temporal_aggregation,
         use_slc_off=use_slc_off,

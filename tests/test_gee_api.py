@@ -29,3 +29,9 @@ def test_fetch_xee_shared_defaults_match_fetch():
             f"Default mismatch for parameter '{name}': "
             f"fetch={fetch_param.default!r}, fetch_xee={xee_param.default!r}"
         )
+
+
+def test_gee_valid_indices_match_indices_module_support():
+    """GEE fetch validators should include all index names provided by indices.py."""
+    expected = {"MNDWI", "NDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
+    assert gee._VALID_INDICES == expected
