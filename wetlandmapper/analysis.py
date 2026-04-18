@@ -159,10 +159,10 @@ def last_occurrence(
 
     # Convert time coordinate to decimal year
     time_vals = data["time"].values
-    
-    # Handle time conversion using pandas (works for numpy datetime64 and other formats)
+
+    # Handle time conversion using pandas
     import pandas as pd
-    
+
     try:
         time_pd = pd.to_datetime(time_vals)
         # Extract as numpy arrays for reliable indexing
@@ -195,20 +195,20 @@ def last_occurrence(
         # Create a binary mask: True where index >= threshold
         above_threshold = index_da >= threshold
 
-        # Find the last True along time dimension
-        # Strategy: reverse the time axis, find first (earliest in reversed = latest in forward)
+        # Find the last True along time dimension.
+        # Reverse time and find first True (latest in original time).
         # then map back to original time indices
         above_threshold_reversed = above_threshold.isel(time=slice(None, None, -1))
         first_along_time_reversed = above_threshold_reversed.argmax(
             dim="time", skipna=False
         )
 
-        # This gives us the index in the reversed array (0 = last in original, 1 = second-to-last, etc.)
+        # Index in reversed array (0=last in original, 1=second-to-last, ...).
         # Convert back to original time index
         n_time = len(above_threshold.time)
         original_time_index = n_time - 1 - first_along_time_reversed
 
-        # Where no True exists, argmax returns 0 and the pixel will appear as if at first timestep
+        # If no True exists, argmax returns 0; mask those pixels after selection.
         # We need to mark those as NaN. Check if any True exists along time.
         has_any_above = above_threshold.any(dim="time")
 
@@ -243,16 +243,16 @@ def last_occurrence(
     else:
         # When combining multiple indices into a Dataset, use xr.Dataset directly
         # with explicit variable assignment to avoid coordinate merging issues
-        year_vars = {k: (['y', 'x'], v.values) for k, v in result_years.items()}
-        value_vars = {k: (['y', 'x'], v.values) for k, v in result_values.items()}
-        
+        year_vars = {k: (["y", "x"], v.values) for k, v in result_years.items()}
+        value_vars = {k: (["y", "x"], v.values) for k, v in result_values.items()}
+
         # Use coordinates from the first result
         first_year = list(result_years.values())[0]
         coords = {
-            'y': first_year.coords['y'],
-            'x': first_year.coords['x'],
+            "y": first_year.coords["y"],
+            "x": first_year.coords["x"],
         }
-        
+
         year_result = xr.Dataset(year_vars, coords=coords)
         value_result = xr.Dataset(value_vars, coords=coords)
 

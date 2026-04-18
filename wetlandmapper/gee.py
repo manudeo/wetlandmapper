@@ -1905,7 +1905,7 @@ def _build_climate_adaptive_composites(
         composite = (
             composite.select(index_bands)
                      .updateMask(hydro_mask)        # apply hydroperiod mask
-                     .float()                       # explicit cast to float to ensure type consistency
+                     .float()                       # ensure consistent band type
                      .set("system:time_start",
                           ee.Date.fromYMD(yr, 7, 1).millis())
                      .set("year", yr)
