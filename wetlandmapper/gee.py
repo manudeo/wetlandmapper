@@ -615,8 +615,9 @@ def _build_composites(
     """
     if temporal_aggregation == "all":
         # Ensure system:time_start is a proper property xee can read
+        # Also explicit float cast ensures type consistency across the collection
         collection = collection.map(
-            lambda img: img.set("system:time_start", img.get("system:time_start"))
+            lambda img: img.float().set("system:time_start", img.get("system:time_start"))
         )
         return collection
 
@@ -630,7 +631,7 @@ def _build_composites(
         period_col: "ee.ImageCollection", timestamp: "ee.Number"
     ) -> "ee.Image":
         """Return a median composite or a masked fallback image, server-side."""
-        real = period_col.median().set("system:time_start", timestamp)
+        real = period_col.median().float().set("system:time_start", timestamp)
         fallback = _make_nan_image(index_bands, timestamp)
         return ee.Image(ee.Algorithms.If(period_col.size().gt(0), real, fallback))
 
@@ -957,7 +958,7 @@ def _build_processed_collection(
             local_range_window_px=local_range_window_px,
             max_elevation_m=max_elevation_m,
         )
-        collection = collection.map(lambda img: img.updateMask(terrain_mask))
+        collection = collection.map(lambda img: img.updateMask(terrain_mask).float())
 
     # Keep only requested index bands
     collection = collection.select(indices_list)
