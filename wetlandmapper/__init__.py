@@ -28,6 +28,7 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
+from .analysis import last_occurrence
 from .dynamics import (
     DYNAMICS_CLASSES,
     DYNAMICS_COLORS,
@@ -62,6 +63,8 @@ from .wct import (
 )
 
 __all__ = [
+    # Analysis utilities
+    "last_occurrence",
     # Index computation
     "compute_mndwi",
     "compute_ndwi",
