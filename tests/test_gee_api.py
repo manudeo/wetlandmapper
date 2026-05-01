@@ -1,5 +1,7 @@
 import inspect
 
+import pytest
+
 from wetlandmapper import gee
 
 
@@ -29,6 +31,30 @@ def test_fetch_xee_shared_defaults_match_fetch():
             f"Default mismatch for parameter '{name}': "
             f"fetch={fetch_param.default!r}, fetch_xee={xee_param.default!r}"
         )
+
+
+def test_normalize_reduction_method_accepts_supported_values():
+    assert gee._normalize_reduction_method("median") == "median"
+    assert gee._normalize_reduction_method("MEAN") == "mean"
+    assert gee._normalize_reduction_method("percentile") == "percentile"
+
+
+def test_normalize_reduction_method_rejects_unknown_values():
+    with pytest.raises(ValueError, match="reduction_method"):
+        gee._normalize_reduction_method("sum")
+
+
+def test_validate_percentile_rejects_out_of_range_values():
+    with pytest.raises(ValueError, match="percentile"):
+        gee._validate_percentile(-1)
+
+    with pytest.raises(ValueError, match="percentile"):
+        gee._validate_percentile(101)
+
+
+def test_format_percentile_token_handles_integer_and_fractional_values():
+    assert gee._format_percentile_token(50.0) == "50"
+    assert gee._format_percentile_token(33.3) == "33_3"
 
 
 def test_gee_valid_indices_match_indices_module_support():

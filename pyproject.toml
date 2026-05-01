@@ -88,6 +88,9 @@ local_scheme = "no-local-version"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts   = "-v --tb=short"
+markers = [
+    "live_gee: opt-in Google Earth Engine integration tests that require credentials and quota",
+]
 
 [tool.coverage.run]
 source = ["wetlandmapper"]

@@ -113,6 +113,30 @@ git clone https://github.com/manudeo/wetlandmapper
 cd wetlandmapper
 pip install -e ".[all]"
 ```
+
+## Live Google Earth Engine Tests (Local Opt-In)
+
+WetlandMapper includes live Google Earth Engine smoke tests in `tests/test_gee_live.py`.
+
+These tests are opt-in and are skipped by default unless you set environment variables.
+This means they do not run in GitHub Actions unless a workflow explicitly enables them.
+
+```bash
+# PowerShell example
+$env:WETLANDMAPPER_RUN_GEE_LIVE='1'
+$env:WETLANDMAPPER_GEE_PROJECT='your-gee-project-id'
+$env:WETLANDMAPPER_GEE_AOI='notebooks/chilika_north/Chilika_north.shp'
+pytest tests/test_gee_live.py -m live_gee
+```
+
+What is covered by the live smoke tests:
+
+- Sentinel-2 reducers (`mean`, `percentile`)
+- `LandsatAll`
+- Individual Landsat missions (`Landsat4`, `Landsat5`, `Landsat7`, `Landsat8`, `Landsat9`)
+- `MODISAll`
+- Individual MODIS missions (`MODIS_Terra`, `MODIS_Aqua`)
+
 ---
 ## **Documentation:** 
 ### https://wetlandmapper.readthedocs.io/en/latest/

@@ -96,7 +96,7 @@ from __future__ import annotations
 import datetime
 import warnings
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Any, Sequence, TypeAlias, cast
 
 import numpy as np
 import xarray as xr
@@ -104,13 +104,28 @@ import xarray as xr
 # ---------------------------------------------------------------------------
 # Optional dependency guard
 # ---------------------------------------------------------------------------
-try:
-    import ee
 
+if TYPE_CHECKING:
+    import ee as ee_module
+
+    EEGeometry: TypeAlias = ee_module.Geometry
+    EEImage: TypeAlias = ee_module.Image
+    EEImageCollection: TypeAlias = ee_module.ImageCollection
+    EENumber: TypeAlias = ee_module.Number
+else:
+    EEGeometry = Any
+    EEImage = Any
+    EEImageCollection = Any
+    EENumber = Any
+
+try:
+    import ee as _ee
+
+    ee = cast(Any, _ee)
     _HAS_EE = True
 except ImportError:
     _HAS_EE = False
-    ee = None  # type: ignore
+    ee = cast(Any, None)
 
 __all__ = ["fetch", "fetch_xee", "authenticate", "init"]
 
@@ -182,6 +197,7 @@ _COLLECTION_ID: dict[str, str] = {
     "Landsat9": "LANDSAT/LC09/C02/T1_L2",
     "Sentinel2": "COPERNICUS/S2_SR_HARMONIZED",
     "MODIS_Terra": "MODIS/061/MOD09A1",
+
     "MODIS_Aqua": "MODIS/061/MYD09A1",
 }
 
@@ -241,6 +257,7 @@ _SEASONS: dict[str, tuple[list[int], int, int]] = {
 
 _VALID_AGGREGATIONS = {"all", "annual", "monthly", "seasonal"}
 _VALID_INDICES = {"MNDWI", "NDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
+_VALID_REDUCTION_METHODS = {"median", "mean", "percentile"}
 _VALID_SINGLE_SENSORS = set(_COLLECTION_ID.keys()) | set(_SENSOR_ALIASES.keys())
 _ALL_VALID_SENSORS = _VALID_SINGLE_SENSORS | {"LandsatAll", "MODISAll"}
 
@@ -276,7 +293,7 @@ def init(project: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _mask_landsat_clouds(image: "ee.Image") -> "ee.Image":
+def _mask_landsat_clouds(image: EEImage) -> EEImage:
     """Mask clouds and cloud shadows using QA_PIXEL bits 3 and 4 (Landsat C02 L2)."""
     qa = image.select("QA_PIXEL")
     mask = (
@@ -287,14 +304,14 @@ def _mask_landsat_clouds(image: "ee.Image") -> "ee.Image":
     return image.updateMask(mask)
 
 
-def _mask_sentinel2_clouds(image: "ee.Image") -> "ee.Image":
+def _mask_sentinel2_clouds(image: EEImage) -> EEImage:
     """Mask opaque clouds (bit 10) and cirrus (bit 11) using QA60 (S2 SR)."""
     qa = image.select("QA60")
     mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
-    return image.updateMask(mask).divide(10000)
+    return image.updateMask(mask)
 
 
-def _mask_modis_clouds(image: "ee.Image") -> "ee.Image":
+def _mask_modis_clouds(image: EEImage) -> EEImage:
     """Mask clouds and cloud shadows using MODIS StateQA bits.
 
     StateQA bit layout (MOD09A1 / MYD09A1):
@@ -315,7 +332,7 @@ def _mask_modis_clouds(image: "ee.Image") -> "ee.Image":
 # ---------------------------------------------------------------------------
 
 
-def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
+def _add_indices(image: EEImage, bands: dict[str, str]) -> EEImage:
     """Add supported index bands to a GEE image using normalizedDifference.
 
     Indices are evaluated server-side as (A - B) / (A + B).
@@ -365,14 +382,15 @@ def _add_indices(image: "ee.Image", bands: dict[str, str]) -> "ee.Image":
         )
         .rename("AWEInsh")
     )
-    return image.addBands([mndwi, ndwi, ndvi, ndti, aweish, aweinsh])
+    derived_bands = ee.Image.cat([mndwi, ndwi, ndvi, ndti, aweish, aweinsh])
+    return cast(EEImage, image.addBands(derived_bands))
 
 
 def _add_custom_indices(
-    image: "ee.Image",
+    image: EEImage,
     bands: dict[str, str],
     custom_indices: dict[str, str],
-) -> "ee.Image":
+) -> EEImage:
     """Add user-defined index bands from ee.Image.expression formulas.
 
     Formula symbols are the harmonised band names:
@@ -394,7 +412,8 @@ def _add_custom_indices(
         image.expression(formula, variables).rename(name)
         for name, formula in custom_indices.items()
     ]
-    return image.addBands(new_bands)
+    derived_bands = ee.Image.cat(new_bands)
+    return cast(EEImage, image.addBands(derived_bands))
 
 
 
@@ -404,12 +423,12 @@ def _add_custom_indices(
 
 
 def _build_landsat_all(
-    ee_geom: "ee.Geometry",
+    ee_geom: EEGeometry,
     start: str,
     end: str,
     max_cloud_cover: float,
     use_slc_off: bool,
-) -> "ee.ImageCollection":
+) -> EEImageCollection:
     """Build a merged Landsat 4-9 collection with harmonised band names.
 
     Each mission's sub-collection is filtered to the requested date range
@@ -514,11 +533,11 @@ def _build_landsat_all(
 
 
 def _build_modis_all(
-    ee_geom: "ee.Geometry",
+    ee_geom: EEGeometry,
     start: str,
     end: str,
     max_cloud_cover: float,
-) -> "ee.ImageCollection":
+) -> EEImageCollection:
     """Merge MODIS Terra (MOD09A1) and Aqua (MYD09A1) into one collection.
 
     Both collections use the same MODIS_500m band family.  Terra has an
@@ -566,7 +585,7 @@ def _build_modis_all(
 # ---------------------------------------------------------------------------
 
 
-def _make_nan_image(bands: list[str], timestamp: "ee.Number") -> "ee.Image":
+def _make_nan_image(bands: list[str], timestamp: EENumber) -> EEImage:
     """Create a constant all-masked image with the specified band names.
 
     Used as a fallback when a compositing period contains no valid images.
@@ -581,19 +600,40 @@ def _make_nan_image(bands: list[str], timestamp: "ee.Number") -> "ee.Image":
     return img.float().set("system:time_start", timestamp)
 
 
+def _normalize_reduction_method(reduction_method: str) -> str:
+    """Validate and normalize the collection reduction method."""
+    method = reduction_method.lower()
+    if method not in _VALID_REDUCTION_METHODS:
+        raise ValueError(
+            f"reduction_method must be one of {sorted(_VALID_REDUCTION_METHODS)}, "
+            f"got {reduction_method!r}."
+        )
+    return method
+
+
+def _validate_percentile(percentile: float) -> None:
+    """Validate percentile input for percentile reduction."""
+    if not 0.0 <= percentile <= 100.0:
+        raise ValueError(f"percentile must be between 0 and 100 inclusive, got {percentile!r}.")
+
+
+def _format_percentile_token(percentile: float) -> str:
+    """Format a percentile value into a stable band-suffix token."""
+    if float(percentile).is_integer():
+        return str(int(percentile))
+    return str(percentile).replace(".", "_")
+
+
 def _build_composites(
-    collection: "ee.ImageCollection",
+    collection: EEImageCollection,
     temporal_aggregation: str,
     start: str,
     end: str,
     index_bands: list[str],
-) -> "ee.ImageCollection":
-    """Reduce an ImageCollection to one median composite per chosen period.
-
-    Empty periods (no cloud-free scenes) produce a fully-masked image rather
-    than raising a "band not found" error.  This is implemented using GEE's
-    ``ee.Algorithms.If`` so the check runs server-side without extra
-    ``.getInfo()`` calls.
+    reduction_method: str = "median",
+    percentile: float = 50.0,
+) -> EEImageCollection:
+    """Reduce an ImageCollection to one composite per chosen period.
 
     Parameters
     ----------
@@ -605,7 +645,10 @@ def _build_composites(
         ISO 8601 date strings for the full requested range.
     index_bands : list of str
         Band names present in the collection (e.g. ``["MNDWI", "NDVI"]``).
-        Used to construct the fallback masked image for empty periods.
+    reduction_method : str
+        One of "median", "mean", "percentile". Default "median".
+    percentile : float
+        Percentile value if reduction_method is "percentile". Default 50.0.
 
     Returns
     -------
@@ -613,9 +656,11 @@ def _build_composites(
         One image per period, ``system:time_start`` set to the period midpoint.
         For ``"all"``, the input collection is returned unchanged.
     """
+    reduction_method = _normalize_reduction_method(reduction_method)
+    if reduction_method == "percentile":
+        _validate_percentile(percentile)
+
     if temporal_aggregation == "all":
-        # Ensure system:time_start is a proper property xee can read
-        # Also explicit float cast ensures type consistency across the collection
         collection = collection.map(
             lambda img: img.float().set("system:time_start", img.get("system:time_start"))
         )
@@ -627,11 +672,29 @@ def _build_composites(
     end_yr = end_dt.year
     images = []
 
-    def _safe_composite(
-        period_col: "ee.ImageCollection", timestamp: "ee.Number"
-    ) -> "ee.Image":
-        """Return a median composite or a masked fallback image, server-side."""
-        real = period_col.median().float().set("system:time_start", timestamp)
+    def _safe_composite(period_col: EEImageCollection, timestamp: EENumber) -> EEImage:
+        """Return a composite or a masked fallback image, server-side."""
+        if reduction_method == "median":
+            real = period_col.median().float().set("system:time_start", timestamp)
+        elif reduction_method == "mean":
+            real = period_col.mean().float().set("system:time_start", timestamp)
+        elif reduction_method == "percentile":
+            percentile_token = _format_percentile_token(percentile)
+            reducer = ee.Reducer.percentile(
+                [percentile],
+                [f"p{percentile_token}"],
+            )
+            real = (
+                period_col.reduce(reducer)
+                .select(
+                    [f"{band}_p{percentile_token}" for band in index_bands],
+                    index_bands,
+                )
+                .float()
+                .set("system:time_start", timestamp)
+            )
+        else:
+            raise AssertionError(f"Unhandled reduction_method: {reduction_method}")
         fallback = _make_nan_image(index_bands, timestamp)
         return ee.Image(ee.Algorithms.If(period_col.size().gt(0), real, fallback))
 
@@ -688,7 +751,7 @@ def _build_composites(
 # ---------------------------------------------------------------------------
 
 
-def _parse_aoi(aoi: "dict | str | Path") -> "ee.Geometry":
+def _parse_aoi(aoi: "dict | str | Path") -> EEGeometry:
     """Convert an AOI to an ``ee.Geometry``.
 
     Accepts three forms:
@@ -749,7 +812,8 @@ def _parse_aoi(aoi: "dict | str | Path") -> "ee.Geometry":
         if dissolved.empty or dissolved.geometry.iloc[0] is None:
             raise ValueError(f"AOI file is empty or has no geometry: {path}")
 
-        geom_json = dissolved.geometry.iloc[0].__geo_interface__
+        geom = cast(Any, dissolved.geometry.iloc[0])
+        geom_json = geom.__geo_interface__
         return ee.Geometry(geom_json)
 
     # ── GeoJSON dict branch ─────────────────────────────────────────────────
@@ -774,12 +838,12 @@ def _resolve_sensor(sensor: str) -> str:
 
 def _build_single_sensor_collection(
     sensor: str,
-    ee_geom: "ee.Geometry",
+    ee_geom: EEGeometry,
     start: str,
     end: str,
     max_cloud_cover: float,
     use_slc_off: bool,
-) -> tuple["ee.ImageCollection", dict[str, str]]:
+) -> tuple[EEImageCollection, dict[str, str]]:
     """Build a cloud-masked, scaled collection for a single sensor.
 
     Returns
@@ -871,9 +935,15 @@ def _build_processed_collection(
     max_local_range_m: float | None,
     local_range_window_px: int,
     max_elevation_m: float | None,
-) -> tuple["ee.ImageCollection", "ee.Geometry", list[str]]:
+    months: list[int] | None = None,
+    reduction_method: str = "median",
+    percentile: float = 50.0,
+) -> tuple[EEImageCollection, EEGeometry, list[str]]:
     """Build and process collection for fetch/fetch_xee with shared behavior."""
     sensor = _resolve_sensor(sensor)
+    reduction_method = _normalize_reduction_method(reduction_method)
+    if reduction_method == "percentile":
+        _validate_percentile(percentile)
 
     if custom_indices is None:
         custom_indices = {}
@@ -963,10 +1033,26 @@ def _build_processed_collection(
     # Keep only requested index bands
     collection = collection.select(indices_list)
 
+
+    # Filter by months if requested (before compositing)
+    if months is not None:
+        if isinstance(months, int):
+            months_list = [months]
+        else:
+            months_list = months
+        if not months_list:
+            raise ValueError("months must contain at least one month number when provided.")
+        if any((not isinstance(month, int)) or month < 1 or month > 12 for month in months_list):
+            raise ValueError(f"months must be integers from 1 to 12, got {months_list!r}.")
+        filtered = ee.ImageCollection([])
+        for m in months_list:
+            filtered = filtered.merge(collection.filter(ee.Filter.calendarRange(m, m, "month")))
+        collection = filtered
+
     # Server-side temporal compositing
     if climate_adaptive:
         monthly = _build_composites(
-            collection, "monthly", start, end, indices_list
+            collection, "monthly", start, end, indices_list, reduction_method, percentile
         )
         collection = _build_climate_adaptive_composites(
             monthly,
@@ -981,15 +1067,15 @@ def _build_processed_collection(
         )
     else:
         collection = _build_composites(
-            collection, temporal_aggregation, start, end, indices_list
+            collection, temporal_aggregation, start, end, indices_list, reduction_method, percentile
         )
 
     return collection, ee_geom, indices_list
 
 
 def _ee_image_to_dataarray(
-    image: "ee.Image",
-    ee_geom: "ee.Geometry",
+    image: EEImage,
+    ee_geom: EEGeometry,
     scale: int,
 ) -> "xr.DataArray":
     """Download a single-band GEE image to a numpy-backed xr.DataArray.
@@ -1059,14 +1145,14 @@ def _ee_image_to_dataarray(
 
 
 def _build_dem_mask(
-    ee_geom: "ee.Geometry",
+    ee_geom: EEGeometry,
     max_slope_deg: float | None = 5.0,
     max_tpi_m: float | None = None,
     tpi_window_px: int = 5,
     max_local_range_m: float | None = None,
     local_range_window_px: int = 5,
     max_elevation_m: float | None = None,
-) -> "ee.Image":
+) -> EEImage:
     """Build a server-side terrain flatness mask using Copernicus GLO-30 DEM.
 
     Returns a binary mask image (1 = valid flat terrain, 0 = steep/high).
@@ -1166,6 +1252,9 @@ def fetch(
     max_local_range_m: float | None = None,
     local_range_window_px: int = 5,
     max_elevation_m: float | None = None,
+    months: list[int] | None = None,
+    reduction_method: str = "median",
+    percentile: float = 50.0,
 ) -> "xr.DataArray | xr.Dataset":
     """Retrieve spectral indices from GEE as an xarray object (immediate download).
 
@@ -1224,8 +1313,17 @@ def fetch(
         climate-adaptive annual composite guided by ERA5-Land precipitation
         and temperature. When enabled, ``temporal_aggregation`` is ignored
         (output is always one image per year). Default ``False``.
+    months : list of int, optional
+        Restrict compositing to these calendar months (1=Jan, ..., 12=Dec).
+        Example: [6, 7, 8] for June–August only. Default None (all months).
+    reduction_method : {"median", "mean", "percentile"}
+        Collection reducer applied within each temporal aggregation window.
+        Default ``"median"``.
+    percentile : float
+        Percentile to use when ``reduction_method="percentile"``.
+        Must be between 0 and 100 inclusive. Default 50.0.
 
-        The algorithm:
+        When ``climate_adaptive=True``, the algorithm:
 
         1. Builds monthly Landsat composites internally.
         2. Joins with ERA5-Land monthly precipitation and 2m temperature.
@@ -1352,9 +1450,15 @@ def fetch(
         max_local_range_m=max_local_range_m,
         local_range_window_px=local_range_window_px,
         max_elevation_m=max_elevation_m,
+        months=months,
+        reduction_method=reduction_method,
+        percentile=percentile,
     )
 
-    n_images = collection.size().getInfo()
+    n_images_info = collection.size().getInfo()
+    if n_images_info is None:
+        raise RuntimeError("Could not determine the number of images returned by GEE.")
+    n_images = int(n_images_info)
     if n_images == 0:
         raise RuntimeError(
             f"No images found for sensor={sensor!r}, [{start}, {end}], "
@@ -1449,6 +1553,9 @@ def fetch_xee(
     local_range_window_px: int = 5,
     max_elevation_m: float | None = None,
     chunks: dict | None = None,
+    months: list[int] | None = None,
+    reduction_method: str = "median",
+    percentile: float = 50.0,
 ) -> "xr.DataArray | xr.Dataset":
     """Retrieve spectral indices from GEE as a lazy Dask-backed xarray via xee.
 
@@ -1500,6 +1607,15 @@ def fetch_xee(
         Same semantics as :func:`fetch`.
     chunks : dict, optional
         Dask chunk sizes, e.g. ``{"time": 1, "lon": 512, "lat": 512}``.
+    months : list of int, optional
+        Restrict compositing to these calendar months (1=Jan, ..., 12=Dec).
+        Example: [6, 7, 8] for June–August only. Default None (all months).
+    reduction_method : {"median", "mean", "percentile"}
+        Collection reducer applied within each temporal aggregation window.
+        Default ``"median"``.
+    percentile : float
+        Percentile to use when ``reduction_method="percentile"``.
+        Must be between 0 and 100 inclusive. Default 50.0.
 
     Returns
     -------
@@ -1572,10 +1688,14 @@ def fetch_xee(
         max_local_range_m=max_local_range_m,
         local_range_window_px=local_range_window_px,
         max_elevation_m=max_elevation_m,
+        months=months,
+        reduction_method=reduction_method,
+        percentile=percentile,
     )
 
     # xee requires a bounding box — arbitrary polygon → one-pixel bug
-    bounds_info = ee_geom.bounds().getInfo()["coordinates"][0]
+    bounds = cast(dict[str, Any], ee_geom.bounds().getInfo())
+    bounds_info = cast(list[list[float]], bounds["coordinates"][0])
     lons = [c[0] for c in bounds_info]
     lats = [c[1] for c in bounds_info]
     ee_bbox = ee.Geometry.BBox(min(lons), min(lats), max(lons), max(lats))
@@ -1585,15 +1705,22 @@ def fetch_xee(
     import xarray as xr
 
     projection = ee.Projection("EPSG:4326").atScale(scale)
-    default_chunks = chunks or {"time": 1, "lon": 512, "lat": 512}
+    default_chunks = chunks or {"lon": 512, "lat": 512}
+    open_chunks = {k: v for k, v in default_chunks.items() if k != "time"}
+    post_time_chunk = default_chunks.get("time")
 
     ds_lazy = xr.open_dataset(
-        collection,
+        cast(Any, collection),
         engine="ee",
         projection=projection,
         geometry=ee_bbox,
-        chunks=default_chunks,
+        chunks=open_chunks or None,
     )
+
+    # Avoid xee's warning about splitting stored time chunks at open time.
+    # If the user asked for time chunking, apply it lazily after dataset creation.
+    if post_time_chunk is not None and "time" in ds_lazy.dims:
+        ds_lazy = ds_lazy.chunk({"time": post_time_chunk})
 
     # ----------------------------------------------------------------
     # Integer time-coordinate fix
@@ -1673,7 +1800,7 @@ def _require_ee() -> None:
 # ---------------------------------------------------------------------------
 
 def _build_climate_adaptive_composites(
-    collection: "ee.ImageCollection",
+    collection: EEImageCollection,
     start: str,
     end: str,
     index_bands: list[str],
@@ -1682,7 +1809,7 @@ def _build_climate_adaptive_composites(
     min_precip_mm: float = 20.0,
     min_temp_c: float = 5.0,
     hydroperiod_months: int = 1,
-) -> "ee.ImageCollection":
+) -> EEImageCollection:
     """Build climate-adaptive annual composites guided by ERA5-Land.
 
     This function addresses two limitations of a naive annual median:
