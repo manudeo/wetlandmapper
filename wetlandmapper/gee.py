@@ -96,7 +96,7 @@ from __future__ import annotations
 import datetime
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Sequence, cast
 
 import numpy as np
 import xarray as xr
@@ -108,10 +108,10 @@ import xarray as xr
 if TYPE_CHECKING:
     import ee as ee_module
 
-    EEGeometry: TypeAlias = ee_module.Geometry
-    EEImage: TypeAlias = ee_module.Image
-    EEImageCollection: TypeAlias = ee_module.ImageCollection
-    EENumber: TypeAlias = ee_module.Number
+    EEGeometry = ee_module.Geometry
+    EEImage = ee_module.Image
+    EEImageCollection = ee_module.ImageCollection
+    EENumber = ee_module.Number
 else:
     EEGeometry = Any
     EEImage = Any
