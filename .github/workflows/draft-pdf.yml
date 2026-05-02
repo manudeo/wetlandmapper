@@ -38,3 +38,5 @@ jobs:
           add: 'paper.pdf'
           default_author: github_actions
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # GitHub Actions can run in detached HEAD; push explicitly to the branch.
+          push: origin HEAD:${{ github.ref_name }}
