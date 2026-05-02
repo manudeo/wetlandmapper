@@ -614,7 +614,9 @@ def _normalize_reduction_method(reduction_method: str) -> str:
 def _validate_percentile(percentile: float) -> None:
     """Validate percentile input for percentile reduction."""
     if not 0.0 <= percentile <= 100.0:
-        raise ValueError(f"percentile must be between 0 and 100 inclusive, got {percentile!r}.")
+        raise ValueError(
+            f"percentile must be between 0 and 100 inclusive, got {percentile!r}."
+        )
 
 
 def _format_percentile_token(percentile: float) -> str:
@@ -1041,12 +1043,21 @@ def _build_processed_collection(
         else:
             months_list = months
         if not months_list:
-            raise ValueError("months must contain at least one month number when provided.")
-        if any((not isinstance(month, int)) or month < 1 or month > 12 for month in months_list):
-            raise ValueError(f"months must be integers from 1 to 12, got {months_list!r}.")
+            raise ValueError(
+                "months must contain at least one month number when provided."
+            )
+        if any(
+            (not isinstance(month, int)) or month < 1 or month > 12
+            for month in months_list
+        ):
+            raise ValueError(
+                f"months must be integers from 1 to 12, got {months_list!r}."
+            )
         filtered = ee.ImageCollection([])
         for m in months_list:
-            filtered = filtered.merge(collection.filter(ee.Filter.calendarRange(m, m, "month")))
+            filtered = filtered.merge(
+                collection.filter(ee.Filter.calendarRange(m, m, "month"))
+            )
         collection = filtered
 
     # Server-side temporal compositing
@@ -1067,7 +1078,13 @@ def _build_processed_collection(
         )
     else:
         collection = _build_composites(
-            collection, temporal_aggregation, start, end, indices_list, reduction_method, percentile
+            collection,
+            temporal_aggregation,
+            start,
+            end,
+            indices_list,
+            reduction_method,
+            percentile,
         )
 
     return collection, ee_geom, indices_list
