@@ -47,6 +47,9 @@ notebooks/.ipynb_checkpoints/
 # Docs build
 docs/_build/
 
+# setuptools-scm generated file
+wetlandmapper/_version.py
+
 # SSH keys & credentials 
 github
 github.pub

@@ -71,6 +71,9 @@ jobs:
       - name: Install build tool
         run: pip install build setuptools-scm
 
+      - name: Clean previous build outputs
+        run: rm -rf dist build *.egg-info
+
       - name: Verify build version resolves from tag
         run: |
           EXPECTED="${{ github.event.release.tag_name }}"
@@ -79,6 +82,34 @@ jobs:
 
       - name: Build sdist and wheel
         run: python -m build
+
+      - name: Validate built artifact versions
+        run: |
+          EXPECTED="${{ github.event.release.tag_name }}"
+          EXPECTED="${EXPECTED#v}"
+          export EXPECTED
+          ls -1 dist/
+          python - <<'PY'
+          from pathlib import Path
+          import os
+
+          expected = os.environ["EXPECTED"]
+          files = sorted(p.name for p in Path("dist").glob("*"))
+          if not files:
+              raise SystemExit("No distribution files found in dist/")
+
+          bad_dev = [f for f in files if ".dev" in f]
+          if bad_dev:
+              raise SystemExit(f"Dev artifacts detected: {bad_dev}")
+
+          bad_expected = [f for f in files if expected not in f]
+          if bad_expected:
+              raise SystemExit(
+                  f"Artifact version mismatch. Expected {expected} in: {bad_expected}"
+              )
+
+          print("Artifact versions validated:", files)
+          PY
 
       - name: Check distribution with twine
         run: |
