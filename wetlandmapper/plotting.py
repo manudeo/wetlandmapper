@@ -376,8 +376,6 @@ def plot_ema_codes(
     -------
     fig, ax
     """
-    from .wct import WCT_CLASSES
-
     plt, mcolors, mpatches = _get_mpl()
 
     if hasattr(ema_codes, "data_vars") and "wvt_code" in ema_codes:
@@ -396,7 +394,9 @@ def plot_ema_codes(
 
     raw_values = np.asarray(da2d.values)
     flat_values = raw_values.ravel()
-    labels = np.array([_ema_label_from_value(value) for value in flat_values], dtype=object)
+    labels = np.array(
+        [_ema_label_from_value(value) for value in flat_values], dtype=object
+    )
     unique_labels = list(dict.fromkeys(labels.tolist()))
     label_to_index = {label: idx for idx, label in enumerate(unique_labels)}
     encoded = np.array([label_to_index[label] for label in labels], dtype=np.int16)
