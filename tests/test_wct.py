@@ -5,7 +5,11 @@ import pytest
 import xarray as xr
 
 from wetlandmapper import WCT_CLASSES, classify_wct, compute_indices
-from wetlandmapper.wct import build_ema_lookup_table, classify_wct_ema
+from wetlandmapper.wct import (
+    build_ema_lookup_table,
+    build_wvt_encoding_table,
+    classify_wct_ema,
+)
 
 
 class TestClassifyWCT:
@@ -169,6 +173,12 @@ class TestClassifyWCTEMA:
         result = classify_wct_ema(indices)
         assert "combination_code" in result
 
+    def test_classify_wct_ema_has_wvt_variable(self, multispectral_ds):
+        """EMA result should have a human-readable WVT code variable."""
+        indices = compute_indices(multispectral_ds)
+        result = classify_wct_ema(indices)
+        assert "wvt_code" in result
+
     def test_classify_wct_ema_output_dims(self, multispectral_ds):
         """EMA output spatial dims should match input."""
         indices = compute_indices(multispectral_ds)
@@ -260,6 +270,35 @@ class TestClassifyWCTEMA:
         result = classify_wct_ema(indices)
         assert "title" in result.attrs
         assert "references" in result.attrs
+
+
+class TestBuildWVTEncodingTable:
+    def test_build_wvt_encoding_table_returns_array(self):
+        table = build_wvt_encoding_table(n_parts=4)
+        assert isinstance(table, np.ndarray)
+        assert table.ndim == 3
+
+    def test_build_wvt_encoding_table_shape(self):
+        n_parts = 4
+        table = build_wvt_encoding_table(n_parts=n_parts)
+        assert table.shape == (n_parts + 1, n_parts + 1, n_parts + 1)
+
+    def test_build_wvt_encoding_table_example_value(self):
+        table = build_wvt_encoding_table(n_parts=4)
+        assert table[4, 3, 1] == "W4V3T1"
+
+
+class TestPlotEMA:
+    def test_plot_ema_codes_smoke(self, multispectral_ds):
+        matplotlib = pytest.importorskip("matplotlib")
+        matplotlib.use("Agg")
+        from wetlandmapper.plotting import plot_ema_codes
+
+        indices = compute_indices(multispectral_ds)
+        result = classify_wct_ema(indices)
+        fig, ax = plot_ema_codes(result["wvt_code"], add_colorbar=True)
+        assert fig is not None
+        assert ax is not None
 
 
 class TestBuildEMALookupTable:

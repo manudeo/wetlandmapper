@@ -32,6 +32,7 @@ import numpy as np
 __all__ = [
     "plot_dynamics",
     "plot_wct",
+    "plot_ema_codes",
     "plot_index",
     "plot_wet_frequency",
 ]
@@ -134,6 +135,28 @@ def _build_cmap_and_norm(class_codes, class_colors):
     bounds = [codes[0] - 0.5] + [c + 0.5 for c in codes]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
     return cmap, norm, codes
+
+
+def _ema_label_from_value(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (np.integer, int)):
+        encoded = int(value)
+    else:
+        try:
+            encoded = int(value)
+        except (TypeError, ValueError):
+            return str(value)
+    return f"W{encoded // 100}V{(encoded // 10) % 10}T{encoded % 10}"
+
+
+def _build_categorical_cmap(n_items):
+    plt, mcolors, _ = _get_mpl()
+    base = plt.get_cmap("turbo", max(n_items, 1))
+    colors = [base(i) for i in range(max(n_items, 1))]
+    cmap = mcolors.ListedColormap(colors)
+    norm = mcolors.BoundaryNorm(np.arange(-0.5, n_items + 0.5, 1), cmap.N)
+    return cmap, norm, colors
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +343,86 @@ def plot_wct(
             mpatches.Patch(color=WCT_COLORS[c], label=WCT_CLASSES[c]) for c in ordered
         ]
         _add_outside_legend(fig, ax, patches, "Cover Type", legend_loc)
+    else:
+        fig.tight_layout()
+
+    if savepath:
+        fig.savefig(savepath, dpi=dpi, bbox_inches="tight")
+
+    return fig, ax
+
+
+def plot_ema_codes(
+    ema_codes,
+    ax=None,
+    title: str = "EMA / WVT Codes",
+    figsize: tuple = (8, 7),
+    add_colorbar: bool = True,
+    legend_loc: str = "outside right",
+    savepath: str | None = None,
+    dpi: int = 150,
+):
+    """Plot EMA combination codes or WVT labels as a categorical raster.
+
+    Parameters
+    ----------
+    ema_codes : xr.DataArray or xr.Dataset
+        Either the ``wvt_code`` string raster, the ``combination_code``
+        integer raster, or a standalone DataArray containing the code values.
+    add_colorbar : bool
+        Add a legend with one entry per unique code present in the raster.
+
+    Returns
+    -------
+    fig, ax
+    """
+    from .wct import WCT_CLASSES
+
+    plt, mcolors, mpatches = _get_mpl()
+
+    if hasattr(ema_codes, "data_vars") and "wvt_code" in ema_codes:
+        da = ema_codes["wvt_code"]
+    elif hasattr(ema_codes, "data_vars") and "ema_code" in ema_codes:
+        da = ema_codes["ema_code"]
+    elif hasattr(ema_codes, "data_vars") and "combination_code" in ema_codes:
+        da = ema_codes["combination_code"]
+    else:
+        da = ema_codes
+
+    fig, ax = _ensure_axes(ax, figsize)
+    da2d = _get_2d(da)
+    extent = _imshow_extent(da2d)
+    origin = _imshow_origin(da2d)
+
+    raw_values = np.asarray(da2d.values)
+    flat_values = raw_values.ravel()
+    labels = np.array([_ema_label_from_value(value) for value in flat_values], dtype=object)
+    unique_labels = list(dict.fromkeys(labels.tolist()))
+    label_to_index = {label: idx for idx, label in enumerate(unique_labels)}
+    encoded = np.array([label_to_index[label] for label in labels], dtype=np.int16)
+    encoded = encoded.reshape(raw_values.shape)
+
+    cmap, norm, colors = _build_categorical_cmap(len(unique_labels))
+
+    ax.imshow(
+        encoded,
+        cmap=cmap,
+        norm=norm,
+        origin=origin,
+        extent=extent,
+        interpolation="nearest",
+        aspect="equal" if extent is None else "auto",
+    )
+    _add_xy_labels(ax, da2d)
+    ax.set_title(title, fontsize=12, fontweight="bold", pad=6)
+
+    if add_colorbar:
+        patches = [
+            mpatches.Patch(color=colors[idx], label=label)
+            for idx, label in enumerate(unique_labels)
+        ]
+        legend_title = "WVT Code"
+        _add_outside_legend(fig, ax, patches, legend_title, legend_loc)
     else:
         fig.tight_layout()
 

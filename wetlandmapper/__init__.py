@@ -58,6 +58,7 @@ from .wct import (
     WCT_COLORS,
     WCT_EMA_QUARTILE_BOUNDARIES,
     build_ema_lookup_table,
+    build_wvt_encoding_table,
     classify_wct,
     classify_wct_ema,
 )
@@ -93,4 +94,5 @@ __all__ = [
     "WCT_COLORS",
     "WCT_EMA_QUARTILE_BOUNDARIES",
     "build_ema_lookup_table",
+    "build_wvt_encoding_table",
 ]

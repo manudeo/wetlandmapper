@@ -63,6 +63,7 @@ __all__ = [
     "WCT_COLORS",
     "WCT_EMA_QUARTILE_BOUNDARIES",
     "build_ema_lookup_table",
+    "build_wvt_encoding_table",
 ]
 
 
@@ -200,6 +201,29 @@ def build_ema_lookup_table(n_parts: int = 4) -> np.ndarray:
     return table
 
 
+def build_wvt_encoding_table(n_parts: int = 4) -> np.ndarray:
+    """Build the full WVT code table for all level combinations.
+
+    The existing EMA lookup table collapses each level triple into one of the
+    five WCT classes. This table keeps the three-way level identity intact by
+    returning the explicit code string, for example ``"W4V3T1"``.
+
+    Level semantics are the same as :func:`build_ema_lookup_table`:
+    0 denotes negative values and 1..n_parts denote equal-width bins over the
+    positive [0, 1] range.
+    """
+    n = n_parts
+    size = n + 1
+    table = np.empty((size, size, size), dtype=object)
+
+    for w in range(0, n + 1):
+        for v in range(0, n + 1):
+            for t in range(0, n + 1):
+                table[w, v, t] = f"W{w}V{v}T{t}"
+
+    return table
+
+
 # Cache the default table so it is built only once per process
 _EMA_LOOKUP_4: np.ndarray = build_ema_lookup_table(n_parts=4)
 
@@ -257,6 +281,11 @@ def classify_wct_ema(
             Low → WCT 1). Useful for inspecting which index fractions
             drove the classification at each pixel.
 
+        ``"wvt_code"``
+            Human-readable string raster using explicit level labels, for
+            example ``"W4V3T1"``. This is the direct WVT encoding requested
+            by the extended EMA workflow.
+
     Notes
     -----
     The combination code is distinct from the class: two pixels with the
@@ -307,6 +336,8 @@ def classify_wct_ema(
     else:
         table = build_ema_lookup_table(n_parts=n_parts)
 
+    wvt_table = build_wvt_encoding_table(n_parts=n_parts)
+
     # Vectorised lookup: table[ml[i,j], vl[i,j], tl[i,j]] for every pixel
     wct_vals = table[ml, vl, tl]  # numpy fancy indexing, shape (ny, nx)
 
@@ -316,10 +347,12 @@ def classify_wct_ema(
     combo_vals = (
         ml.astype(np.int16) * 100 + vl.astype(np.int16) * 10 + tl.astype(np.int16)
     )
+    wvt_vals = wvt_table[ml, vl, tl]
 
     # Wrap both arrays as DataArrays preserving spatial coordinates
     wct = xr.DataArray(wct_vals, dims=mndwi.dims, coords=mndwi.coords)
     combo = xr.DataArray(combo_vals, dims=mndwi.dims, coords=mndwi.coords)
+    wvt_code = xr.DataArray(wvt_vals, dims=mndwi.dims, coords=mndwi.coords)
 
     combo.name = "combination_code"
     combo.attrs.update(
@@ -331,6 +364,17 @@ def classify_wct_ema(
             f"over [0, 1] with step {step:.2f}. "
             "Example: 401 = MNDWI High / NDVI Negative / NDTI Low"
             " = WCT 1 (Open Clear Water)."
+        ),
+        n_parts=n_parts,
+        step=step,
+    )
+
+    wvt_code.name = "wvt_code"
+    wvt_code.attrs.update(
+        long_name="WVT Code",
+        encoding=(
+            "Explicit WVT level labels for each pixel, formatted as "
+            "W{mndwi}V{ndvi}T{ndti}."
         ),
         n_parts=n_parts,
         step=step,
@@ -348,7 +392,11 @@ def classify_wct_ema(
     )
 
     return xr.Dataset(
-        {"wetland_cover_type": wct, "combination_code": combo},
+        {
+            "wetland_cover_type": wct,
+            "combination_code": combo,
+            "wvt_code": wvt_code,
+        },
         attrs={
             "title": ("Wetland Cover Type - EMA combination-lookup classification"),
             "references": (
