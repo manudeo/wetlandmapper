@@ -81,6 +81,8 @@ include = ["wetlandmapper*"]
 [tool.setuptools_scm]
 write_to = "wetlandmapper/_version.py"
 local_scheme = "no-local-version"
+# Enforce a single release-tag convention to avoid ambiguous version resolution.
+tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
 
 # ---------------------------------------------------------------------------
 # Testing
