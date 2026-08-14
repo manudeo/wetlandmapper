@@ -57,10 +57,14 @@ from .wct import (
     WCT_CLASSES,
     WCT_COLORS,
     WCT_EMA_QUARTILE_BOUNDARIES,
+    WCT_LEVEL2_CLASSES,
+    WCT_LEVEL2_COLORS,
     build_ema_lookup_table,
+    build_ema_lookup_table_level2,
     build_wvt_encoding_table,
     classify_wct,
     classify_wct_ema,
+    classify_wct_ema_level2,
 )
 
 __all__ = [
@@ -89,10 +93,14 @@ __all__ = [
     "mask_terrain_artifacts",
     # WCT classification
     "classify_wct_ema",
+    "classify_wct_ema_level2",
     "classify_wct",
     "WCT_CLASSES",
     "WCT_COLORS",
+    "WCT_LEVEL2_CLASSES",
+    "WCT_LEVEL2_COLORS",
     "WCT_EMA_QUARTILE_BOUNDARIES",
     "build_ema_lookup_table",
+    "build_ema_lookup_table_level2",
     "build_wvt_encoding_table",
 ]

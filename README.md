@@ -18,6 +18,7 @@
 |--------|--------|--------|
 | `classify_dynamics` | Water index time-series aggregation ([Singh & Sinha 2022, *RSL*](https://doi.org/10.1080/2150704X.2021.1980919)) | 7 classes (1 non-wetland + 6 dynamics) |
 | `classify_wct` / `classify_wct_ema` | MNDWI + NDVI + NDTI combination ([Singh et al. 2022, *EMA*](https://doi.org/10.1007/s10661-022-10541-7)) | 6 classes (1 non-wetland + 5 biophysical types) |
+| `classify_wct_ema_level2` | Extended EMA lookup using the same MNDWI + NDVI + NDTI bins | 13 classes (1 non-wetland + 12 Level-2 biophysical subclasses) |
 
 The mapping algorithm is climate- and terrian-adaptive, based on methods developed in Singh and Tooth (in prep.). 
 
@@ -58,6 +59,27 @@ Use `compute_water_indices()` to compare all indices on your data.
 | 4 | **Emergent / Floating Vegetation** | Moderate MNDWI, high NDVI |
 | 5 | **Moist / Waterlogged Soil** | Low–moderate MNDWI, low NDVI |
 | 0 | **Non-wetland** | Below water threshold |
+
+## WCT Level-2 Extended Classes
+
+The Level-2 classifier preserves EMA binning logic but expands the legend to
+separate deep vs shallow water, turbidity intensity, and mixed/fringe states.
+
+| Code | Class |
+|------|-------|
+| 1 | **Open Clear Water (Deep)** |
+| 2 | **Open Clear Water (Shallow)** |
+| 3 | **Highly Turbid Water** |
+| 4 | **Moderately Turbid Water** |
+| 5 | **Moist / Waterlogged Soil** |
+| 6 | **Submerged Aquatic Vegetation** |
+| 7 | **Submerged-Turbid Mixed Water** |
+| 8 | **Emergent / Floating Vegetation** |
+| 9 | **Emergent-Turbid Mixed Water** |
+| 10 | **Moist Vegetated Fringe** |
+| 11 | **Saturated Sediment Fringe** |
+| 12 | **Vegetation-masked Water Fringe** |
+| 0 | **Non-wetland / Dry** |
 
 ## Additional Spectral Indices
 
@@ -181,6 +203,22 @@ wct = classify_wct_ema(indices)
 wct.rio.to_raster("wetland_cover_types.tif")
 ```
 
+### Level-2 Wetland Cover Types (Extended EMA)
+
+```python
+from wetlandmapper import compute_indices
+from wetlandmapper.wct import classify_wct_ema_level2
+
+indices = compute_indices(
+    ds_composite,
+    green_band="B3", red_band="B4",
+    nir_band="B5",   swir_band="B6",
+)
+
+wct_level2 = classify_wct_ema_level2(indices)
+wct_level2["wetland_cover_type_level2"].rio.to_raster("wetland_cover_types_level2.tif")
+```
+
 ### Retrieve data from Google Earth Engine
 
 **Direct download (best for small-to-medium AOIs):**
@@ -294,13 +332,16 @@ It follows the DEM depression protocol described by Sinha et al. (2017, *Current
 ### Visualisation
 
 ```python
-from wetlandmapper.plotting import plot_dynamics, plot_wct
+from wetlandmapper.plotting import plot_dynamics, plot_wct, plot_wct_level2
 
 fig, ax = plot_dynamics(dynamics)
 fig.savefig("dynamics_map.png", dpi=150, bbox_inches="tight")
 
 fig, ax = plot_wct(wct)
 fig.savefig("wct_map.png", dpi=150, bbox_inches="tight")
+
+fig, ax = plot_wct_level2(wct_level2)
+fig.savefig("wct_level2_map.png", dpi=150, bbox_inches="tight")
 ```
 
 ---

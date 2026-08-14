@@ -58,11 +58,15 @@ except ImportError:
 
 __all__ = [
     "classify_wct_ema",
+    "classify_wct_ema_level2",
     "classify_wct",
     "WCT_CLASSES",
     "WCT_COLORS",
+    "WCT_LEVEL2_CLASSES",
+    "WCT_LEVEL2_COLORS",
     "WCT_EMA_QUARTILE_BOUNDARIES",
     "build_ema_lookup_table",
+    "build_ema_lookup_table_level2",
     "build_wvt_encoding_table",
 ]
 
@@ -87,6 +91,38 @@ WCT_COLORS: dict[int, str] = {
     3: "#27ae60",  # medium green — Submerged Aquatic Veg.
     4: "#145a32",  # dark green   — Emergent / Floating Veg.
     5: "#a04000",  # brown        — Moist Soil
+}
+
+WCT_LEVEL2_CLASSES: dict[int, str] = {
+    0: "Non-wetland / Dry",
+    1: "Open Clear Water (Deep)",
+    2: "Open Clear Water (Shallow)",
+    3: "Highly Turbid Water",
+    4: "Moderately Turbid Water",
+    5: "Moist / Waterlogged Soil",
+    6: "Submerged Aquatic Vegetation",
+    7: "Submerged-Turbid Mixed Water",
+    8: "Emergent / Floating Vegetation",
+    9: "Emergent-Turbid Mixed Water",
+    10: "Moist Vegetated Fringe",
+    11: "Saturated Sediment Fringe",
+    12: "Vegetation-masked Water Fringe",
+}
+
+WCT_LEVEL2_COLORS: dict[int, str] = {
+    0: "#f2f3f4",
+    1: "#0b4f9c",
+    2: "#2e86de",
+    3: "#8d5524",
+    4: "#c68642",
+    5: "#a04000",
+    6: "#27ae60",
+    7: "#82e0aa",
+    8: "#145a32",
+    9: "#196f3d",
+    10: "#7dcea0",
+    11: "#b9770e",
+    12: "#0e6655",
 }
 
 WCT_EMA_QUARTILE_BOUNDARIES: dict = {
@@ -197,6 +233,55 @@ def build_ema_lookup_table(n_parts: int = 4) -> np.ndarray:
         for v in range(0, 2):  # 0, 1
             for t in range(0, 2):  # 0, 1
                 table[w, v, t] = 1
+
+    return table
+
+
+def build_ema_lookup_table_level2(n_parts: int = 4) -> np.ndarray:
+    """Build an extended Level-2 EMA lookup table.
+
+    This table preserves the same index-level discretisation as
+    :func:`build_ema_lookup_table` but maps combinations to a richer,
+    12-class biophysical legend (plus 0 for non-wetland/dry).
+
+    The design goal is to keep Level-1 compatibility while exposing
+    additional classes for shallow-vs-deep, turbidity intensity, and
+    mixed/fringe states that are otherwise collapsed.
+    """
+    if not isinstance(n_parts, int) or n_parts < 2:
+        raise ValueError(f"n_parts must be an integer >= 2, got {n_parts!r}")
+
+    n = n_parts
+    size = n + 1
+    table = np.zeros((size, size, size), dtype=np.int8)
+
+    for w in range(0, n + 1):
+        for v in range(0, n + 1):
+            for t in range(0, n + 1):
+                cls = 0
+
+                if w >= 2 and v <= 1 and t <= 1:
+                    cls = 1 if w >= 3 else 2
+                elif w >= 2 and v <= 1 and t >= 2:
+                    cls = 3 if t >= 3 else 4
+                elif w == 1 and v <= 1 and t <= 2:
+                    cls = 5
+                elif w >= 2 and 1 <= v <= 2 and t <= 1:
+                    cls = 6
+                elif w >= 2 and 1 <= v <= 2 and t >= 2:
+                    cls = 7
+                elif v >= 3 and t <= 1:
+                    cls = 8
+                elif v >= 3 and t >= 2:
+                    cls = 9
+                elif w == 1 and v >= 2 and t <= 1:
+                    cls = 10
+                elif w == 1 and t >= 3:
+                    cls = 11
+                elif w == 0 and v >= 2 and t <= 1:
+                    cls = 12
+
+                table[w, v, t] = np.int8(cls)
 
     return table
 
@@ -404,6 +489,82 @@ def classify_wct_ema(
                 "Assessment, 194(12), 878. "
                 "https://doi.org/10.1007/s10661-022-10541-7"
             ),
+        },
+    )
+
+
+def classify_wct_ema_level2(
+    indices: xr.Dataset,
+    n_parts: int = 4,
+) -> xr.Dataset:
+    """Classify Wetland Cover Types using an extended Level-2 EMA lookup.
+
+    The input discretisation and WVT coding are identical to
+    :func:`classify_wct_ema`, but the output class uses a richer set of
+    biophysical subclasses (0..12) defined by :data:`WCT_LEVEL2_CLASSES`.
+
+    Parameters
+    ----------
+    indices : xr.Dataset
+        Dataset with variables ``"MNDWI"``, ``"NDVI"``, ``"NDTI"``.
+    n_parts : int
+        Number of equal bins over [0, 1] for positive values.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset with:
+        - ``"wetland_cover_type_level2"`` (extended classes)
+        - ``"wetland_cover_type"`` (Level-1 compatibility output)
+        - ``"combination_code"`` and ``"wvt_code"``.
+    """
+    level1 = classify_wct_ema(indices, n_parts=n_parts)
+
+    mndwi = indices["MNDWI"]
+    ndvi = indices["NDVI"]
+    ndti = indices["NDTI"]
+    step = 1.0 / n_parts
+
+    def _discretize(da: xr.DataArray) -> np.ndarray:
+        vals = da.values.astype(float)
+        lvl = np.zeros(vals.shape, dtype=np.int8)
+        for k in range(1, n_parts + 1):
+            lo = (k - 1) * step
+            hi = k * step if k < n_parts else 1.0 + 1e-9
+            lvl = np.where((vals >= lo) & (vals < hi), np.int8(k), lvl)
+        return lvl
+
+    ml = _discretize(mndwi)
+    vl = _discretize(ndvi)
+    tl = _discretize(ndti)
+
+    table_l2 = build_ema_lookup_table_level2(n_parts=n_parts)
+    l2_vals = table_l2[ml, vl, tl]
+
+    wct_l2 = xr.DataArray(l2_vals, dims=mndwi.dims, coords=mndwi.coords)
+    wct_l2 = _finalise(
+        wct_l2,
+        indices,
+        method="EMA-combination-lookup-level2",
+        extra_attrs={
+            "n_parts": n_parts,
+            "step": step,
+            "boundaries": [k * step for k in range(n_parts + 1)],
+            "class_codes_level2": str(WCT_LEVEL2_CLASSES),
+        },
+    )
+    wct_l2.name = "wetland_cover_type_level2"
+
+    return xr.Dataset(
+        {
+            "wetland_cover_type_level2": wct_l2,
+            "wetland_cover_type": level1["wetland_cover_type"],
+            "combination_code": level1["combination_code"],
+            "wvt_code": level1["wvt_code"],
+        },
+        attrs={
+            "title": "Wetland Cover Type - EMA Level-2 extended classification",
+            "references": level1.attrs.get("references", ""),
         },
     )
 

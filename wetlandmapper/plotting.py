@@ -32,6 +32,7 @@ import numpy as np
 __all__ = [
     "plot_dynamics",
     "plot_wct",
+    "plot_wct_level2",
     "plot_ema_codes",
     "plot_index",
     "plot_wet_frequency",
@@ -343,6 +344,74 @@ def plot_wct(
             mpatches.Patch(color=WCT_COLORS[c], label=WCT_CLASSES[c]) for c in ordered
         ]
         _add_outside_legend(fig, ax, patches, "Cover Type", legend_loc)
+    else:
+        fig.tight_layout()
+
+    if savepath:
+        fig.savefig(savepath, dpi=dpi, bbox_inches="tight")
+
+    return fig, ax
+
+
+def plot_wct_level2(
+    wct_level2,
+    ax=None,
+    title: str = "Wetland Cover Types (Level-2)",
+    figsize: tuple = (8, 7),
+    add_colorbar: bool = True,
+    legend_loc: str = "outside right",
+    savepath: str | None = None,
+    dpi: int = 150,
+):
+    """Plot the extended Level-2 Wetland Cover Type classification raster.
+
+    Parameters
+    ----------
+    wct_level2 : xr.DataArray or xr.Dataset
+        Output from :func:`wetlandmapper.classify_wct_ema_level2`, or a
+        DataArray containing the ``wetland_cover_type_level2`` values.
+    ax, title, figsize, add_colorbar, legend_loc, savepath, dpi
+        Same controls as :func:`plot_wct`.
+
+    Returns
+    -------
+    fig, ax
+    """
+    from .wct import WCT_LEVEL2_CLASSES, WCT_LEVEL2_COLORS
+
+    plt, mcolors, mpatches = _get_mpl()
+
+    if hasattr(wct_level2, "data_vars") and "wetland_cover_type_level2" in wct_level2:
+        da = wct_level2["wetland_cover_type_level2"]
+    else:
+        da = wct_level2
+
+    cmap, norm, codes = _build_cmap_and_norm(WCT_LEVEL2_CLASSES, WCT_LEVEL2_COLORS)
+    fig, ax = _ensure_axes(ax, figsize)
+
+    da2d = _get_2d(da)
+    extent = _imshow_extent(da2d)
+    origin = _imshow_origin(da2d)
+
+    ax.imshow(
+        da2d.values,
+        cmap=cmap,
+        norm=norm,
+        origin=origin,
+        extent=extent,
+        interpolation="nearest",
+        aspect="equal" if extent is None else "auto",
+    )
+    _add_xy_labels(ax, da2d)
+    ax.set_title(title, fontsize=12, fontweight="bold", pad=6)
+
+    if add_colorbar:
+        ordered = [c for c in sorted(WCT_LEVEL2_CLASSES.keys()) if c != 0] + [0]
+        patches = [
+            mpatches.Patch(color=WCT_LEVEL2_COLORS[c], label=WCT_LEVEL2_CLASSES[c])
+            for c in ordered
+        ]
+        _add_outside_legend(fig, ax, patches, "Cover Type (Level-2)", legend_loc)
     else:
         fig.tight_layout()
 

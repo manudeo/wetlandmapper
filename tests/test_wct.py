@@ -7,8 +7,10 @@ import xarray as xr
 from wetlandmapper import WCT_CLASSES, classify_wct, compute_indices
 from wetlandmapper.wct import (
     build_ema_lookup_table,
+    build_ema_lookup_table_level2,
     build_wvt_encoding_table,
     classify_wct_ema,
+    classify_wct_ema_level2,
 )
 
 
@@ -272,6 +274,27 @@ class TestClassifyWCTEMA:
         assert "references" in result.attrs
 
 
+class TestClassifyWCTEMALevel2:
+    def test_classify_wct_ema_level2_returns_dataset(self, multispectral_ds):
+        indices = compute_indices(multispectral_ds)
+        result = classify_wct_ema_level2(indices)
+        assert isinstance(result, xr.Dataset)
+
+    def test_classify_wct_ema_level2_has_required_variables(self, multispectral_ds):
+        indices = compute_indices(multispectral_ds)
+        result = classify_wct_ema_level2(indices)
+        assert "wetland_cover_type_level2" in result
+        assert "wetland_cover_type" in result
+        assert "combination_code" in result
+        assert "wvt_code" in result
+
+    def test_classify_wct_ema_level2_codes_are_valid(self, multispectral_ds):
+        indices = compute_indices(multispectral_ds)
+        result = classify_wct_ema_level2(indices, n_parts=4)
+        vals = np.unique(result["wetland_cover_type_level2"].values)
+        assert np.all((vals >= 0) & (vals <= 12))
+
+
 class TestBuildWVTEncodingTable:
     def test_build_wvt_encoding_table_returns_array(self):
         table = build_wvt_encoding_table(n_parts=4)
@@ -297,6 +320,17 @@ class TestPlotEMA:
         indices = compute_indices(multispectral_ds)
         result = classify_wct_ema(indices)
         fig, ax = plot_ema_codes(result["wvt_code"], add_colorbar=True)
+        assert fig is not None
+        assert ax is not None
+
+    def test_plot_wct_level2_smoke(self, multispectral_ds):
+        matplotlib = pytest.importorskip("matplotlib")
+        matplotlib.use("Agg")
+        from wetlandmapper.plotting import plot_wct_level2
+
+        indices = compute_indices(multispectral_ds)
+        result = classify_wct_ema_level2(indices)
+        fig, ax = plot_wct_level2(result, add_colorbar=True)
         assert fig is not None
         assert ax is not None
 
@@ -362,3 +396,20 @@ class TestBuildEMALookupTable:
             for t in range(2):  # Low NDTI values
                 val = table[w, 4, t]
                 assert val == 4, f"High NDVI should give WCT 4, got {val}"
+
+
+class TestBuildEMALevel2LookupTable:
+    def test_build_ema_lookup_table_level2_shape(self):
+        n_parts = 4
+        table = build_ema_lookup_table_level2(n_parts=n_parts)
+        assert table.shape == (n_parts + 1, n_parts + 1, n_parts + 1)
+
+    def test_build_ema_lookup_table_level2_valid_range(self):
+        table = build_ema_lookup_table_level2(n_parts=4)
+        vals = np.unique(table)
+        assert np.all((vals >= 0) & (vals <= 12))
+
+    def test_build_ema_lookup_table_level2_open_water_split(self):
+        table = build_ema_lookup_table_level2(n_parts=4)
+        assert table[4, 0, 0] == 1
+        assert table[2, 0, 0] == 2

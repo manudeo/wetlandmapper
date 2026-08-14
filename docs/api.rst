@@ -1,6 +1,12 @@
 API Reference
 =============
 
+Analysis Utilities
+------------------
+
+.. automodule:: wetlandmapper.analysis
+   :members:
+
 Spectral Indices
 ----------------
 

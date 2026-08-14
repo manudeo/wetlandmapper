@@ -5,11 +5,20 @@ WetlandMapper Documentation
 temporal dynamics classification, and Wetland Cover Type (WCT)
 characterisation from multispectral satellite time-series.
 
+Core capabilities include:
+
+* Wetland dynamics classification from time-series water indices
+* WCT classification using EMA (Level-1) and extended EMA (Level-2)
+* Dedicated plotting helpers for dynamics, WCT, Level-2 WCT, and EMA/WVT codes
+* Local and Google Earth Engine based workflows (Landsat, Sentinel-2, MODIS)
+* DEM-based terrain masking and depression mapping
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents
 
    installation
+   workflows
    api
 
 References
