@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+import warnings
 
 from wetlandmapper import DYNAMICS_CLASSES, classify_dynamics
 from wetlandmapper.dynamics import aggregate_time, compute_wet_frequency
@@ -231,6 +232,30 @@ class TestClassifyDynamics:
         with pytest.warns(DeprecationWarning):
             result = classify_dynamics(mndwi_all_wet, nYear=3, mndwi_threshold=0.0)
         assert isinstance(result, xr.DataArray)
+
+    def test_total_nan_policy_warns_when_nan_fraction_high(self):
+        """total mode should warn when NaN fraction exceeds 20%."""
+        times = pd.date_range("2020-01-01", periods=6, freq="D")
+        data = np.full((6, 3, 3), 0.2, dtype=float)
+        data[:, 0, :] = np.nan  # 1/3 of rows all-NaN -> >20% NaN overall
+        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+
+        with pytest.warns(UserWarning, match="nan_policy='total'.*>20% NaN"):
+            result = classify_dynamics(da, nYear=3, nan_policy="total")
+        assert isinstance(result, xr.DataArray)
+
+    def test_total_nan_policy_no_warning_when_nan_fraction_low(self):
+        """total mode should not warn when NaN fraction is low."""
+        times = pd.date_range("2020-01-01", periods=6, freq="D")
+        data = np.full((6, 3, 3), 0.2, dtype=float)
+        data[0, 0, 0] = np.nan  # ~1.85% NaN overall
+        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            result = classify_dynamics(da, nYear=3, nan_policy="total")
+        assert isinstance(result, xr.DataArray)
+        assert not any(isinstance(w.message, UserWarning) for w in record)
 
 
 class TestComputeWetFrequency:

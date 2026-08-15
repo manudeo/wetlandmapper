@@ -119,6 +119,8 @@ def classify_dynamics(
             Denominator = total number of time steps.  NaN pixels count as
             dry.  Reproduces the original Singh & Sinha (2022) method.
             Appropriate when NaN values are rare or randomly distributed.
+            A ``UserWarning`` is emitted when the input contains more than
+            20% NaN values, because this mode can bias wet frequency low.
 
         ``"valid"``
             Denominator = per-pixel count of non-NaN observations.  Wet
@@ -192,6 +194,17 @@ def classify_dynamics(
             f"nan_policy must be one of {_VALID_NAN_POLICIES}, "
             f"got {nan_policy!r}."
         )
+
+    if nan_policy == "total":
+        nan_fraction = float(water_index.isnull().mean().values)
+        if nan_fraction > 0.20:
+            warnings.warn(
+                "nan_policy='total' with >20% NaN values can under-estimate wet "
+                "frequency because missing observations are counted as dry. "
+                "Consider nan_policy='valid'.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     # ------------------------------------------------------------------
     # Stage 1: Summary statistics
