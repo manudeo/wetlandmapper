@@ -91,6 +91,71 @@ class TestClassifyDynamics:
         br = result.isel(y=slice(hy, None), x=slice(hx, None))
         assert (br == 0).all(), "BR quadrant should be Non-wetland"
 
+    def test_min_support_none_reproduces_default_output(self, mndwi_mixed):
+        """min_support=None should be bit-for-bit identical to legacy behavior."""
+        legacy = classify_dynamics(mndwi_mixed, nYear=3)
+        guarded = classify_dynamics(mndwi_mixed, nYear=3, min_support=None)
+        assert legacy.identical(guarded)
+
+    def test_min_support_demotes_single_probe_new_and_lost(self):
+        """Single-observation New/Lost evidence should be demoted when support is high."""
+        n_time = 40
+        n_year = 5
+        times = pd.date_range("2000-01-01", periods=n_time, freq="YS")
+        data = np.full((n_time, 1, 2), -0.2, dtype=float)
+
+        # Pixel 0: wet only in final year -> New under legacy behavior
+        data[-1, 0, 0] = 0.4
+        # Pixel 1: wet only in first year -> Lost under legacy behavior
+        data[0, 0, 1] = 0.4
+
+        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+
+        no_guard = classify_dynamics(
+            da,
+            nYear=n_year,
+            thresholdWet=25,
+            thresholdPersis=75,
+        )
+        with_guard = classify_dynamics(
+            da,
+            nYear=n_year,
+            thresholdWet=25,
+            thresholdPersis=75,
+            min_support=50,
+        )
+
+        assert int(no_guard.sel(y=0, x=0).item()) == 2
+        assert int(no_guard.sel(y=0, x=1).item()) == 3
+        assert int(with_guard.sel(y=0, x=0).item()) == 0
+        assert int(with_guard.sel(y=0, x=1).item()) == 0
+
+    def test_min_support_reduces_stationary_false_new_lost_rate(self):
+        """With min_support=thresholdWet, false New/Lost rate should be very low."""
+        rng = np.random.default_rng(42)
+        n_series = 500
+        n_time = 40
+        n_year = 5
+        p = 0.25
+
+        # Bernoulli wet/dry process around threshold 0.0
+        wet = rng.random((n_time, n_series)) < p
+        data = np.where(wet, 0.3, -0.3).reshape(n_time, 1, n_series)
+        times = pd.date_range("2000-01-01", periods=n_time, freq="YS")
+        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+
+        result = classify_dynamics(
+            da,
+            nYear=n_year,
+            thresholdWet=50,
+            thresholdPersis=90,
+            min_support=50,
+        )
+
+        vals = result.values.reshape(-1)
+        false_direction_rate = float(np.mean(np.isin(vals, [2, 3])))
+        assert false_direction_rate < 0.02
+
     def test_output_codes_are_valid(self, mndwi_mixed):
         """All output values should be valid class codes."""
         result = classify_dynamics(mndwi_mixed, nYear=3)
@@ -207,6 +272,10 @@ class TestClassifyDynamics:
         """Unknown nan_policy should raise ValueError."""
         with pytest.raises(ValueError, match="nan_policy"):
             classify_dynamics(mndwi_mixed, nan_policy="bad_mode")
+
+    def test_invalid_min_support_raises(self, mndwi_mixed):
+        with pytest.raises(ValueError, match="min_support"):
+            classify_dynamics(mndwi_mixed, min_support=120)
 
     def test_valid_nan_policy_with_min_valid_obs_masks_sparse_pixels(self):
         """valid mode with min_valid_obs should mask insufficiently observed pixels."""

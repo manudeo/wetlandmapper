@@ -63,6 +63,7 @@ def classify_dynamics(
     thresholdPersis: float = 75.0,
     water_threshold: float = 0.0,
     nan_policy: str = "total",
+    min_support: float | None = None,
     min_valid_obs: int | None = None,
     # backward-compatibility alias only — no mndwi= alias (function is index-agnostic)
     mndwi_threshold: float | None = None,
@@ -130,6 +131,16 @@ def classify_dynamics(
             in [−1, +1].  Use when cloud masking produces substantial
             or spatially clustered NaN values.
 
+    min_support : float, optional
+        Minimum overall wet frequency (%) required before ``New`` (2) or
+        ``Lost`` (3) may be retained. Pixels assigned these classes with
+        ``W% < min_support`` are demoted to ``Non-wetland`` (0).
+
+        ``None`` (default) preserves legacy behaviour for reproducibility.
+        Setting ``min_support=thresholdWet`` approximates stricter support,
+        but cannot fully prevent false directional labels when stationary
+        inundation probability satisfies ``p >= min_support/100``.
+
     min_valid_obs : int, optional
         *(Only active when nan_policy="valid".)* Minimum number of non-NaN
         observations required for classification.  Pixels with fewer valid
@@ -164,6 +175,11 @@ def classify_dynamics(
     ``nYear=3``, ``thresholdWet=25`` and ``thresholdPersis=75`` for broader
     transferability; set parameters explicitly when reproducing published
     areal totals.
+
+    Class-definition divergence: ``New`` and ``Lost`` use any non-zero
+    support in the recent/historic windows, not strict full-window
+    occupancy/absence. Use ``min_support`` to suppress low-support
+    directional assignments.
     """
     # ------------------------------------------------------------------
     # Backward-compatibility shim
@@ -202,6 +218,8 @@ def classify_dynamics(
             f"nan_policy must be one of {_VALID_NAN_POLICIES}, "
             f"got {nan_policy!r}."
         )
+    if min_support is not None and not (0 <= min_support <= 100):
+        raise ValueError("min_support must be in the range [0, 100] or None.")
 
     if nan_policy == "total":
         nan_fraction = float(water_index.isnull().mean().values)
@@ -301,6 +319,14 @@ def classify_dynamics(
         classification,
     )
 
+    # 3b — Optional support guard for directional edge classes
+    if min_support is not None:
+        classification = xr.where(
+            ((classification == 2) | (classification == 3)) & (w_percent < min_support),
+            np.int8(0),
+            classification,
+        )
+
     # 4 — Intensifying
     classification = xr.where(
         unset(classification) & _intens(w_percent, wh_arg, wr_arg),
@@ -370,6 +396,7 @@ def classify_dynamics(
         thresholdPersis=thresholdPersis,
         water_threshold=water_threshold,
         nan_policy=nan_policy,
+        min_support=min_support,
         n_timesteps=int(n_time),
         class_codes=str(DYNAMICS_CLASSES),
         references=(
