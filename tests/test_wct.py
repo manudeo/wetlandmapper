@@ -334,6 +334,41 @@ class TestPlotEMA:
         assert fig is not None
         assert ax is not None
 
+    def test_plot_functions_accept_colorblind_palette(self, multispectral_ds, mndwi_mixed):
+        matplotlib = pytest.importorskip("matplotlib")
+        matplotlib.use("Agg")
+        from wetlandmapper.plotting import (
+            plot_ema_codes,
+            plot_index,
+            plot_wct,
+            plot_wct_level2,
+            plot_wet_frequency,
+        )
+
+        indices = compute_indices(multispectral_ds)
+        wct_l1 = classify_wct_ema(indices)
+        wct_l2 = classify_wct_ema_level2(indices)
+
+        for fig, ax in [
+            plot_wct(wct_l1["wetland_cover_type"], palette="colorblind"),
+            plot_wct_level2(wct_l2, palette="colorblind"),
+            plot_ema_codes(wct_l1["wvt_code"], palette="colorblind"),
+            plot_index(indices["MNDWI"], palette="colorblind"),
+            plot_wet_frequency(mndwi_mixed, palette="colorblind"),
+        ]:
+            assert fig is not None
+            assert ax is not None
+
+    def test_invalid_palette_raises(self, multispectral_ds):
+        matplotlib = pytest.importorskip("matplotlib")
+        matplotlib.use("Agg")
+        from wetlandmapper.plotting import plot_wct_level2
+
+        indices = compute_indices(multispectral_ds)
+        result = classify_wct_ema_level2(indices)
+        with pytest.raises(ValueError, match="Unknown palette"):
+            plot_wct_level2(result, palette="not_a_palette")
+
 
 class TestBuildEMALookupTable:
     """Tests for build_ema_lookup_table function."""

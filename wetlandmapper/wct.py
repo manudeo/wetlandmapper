@@ -110,19 +110,19 @@ WCT_LEVEL2_CLASSES: dict[int, str] = {
 }
 
 WCT_LEVEL2_COLORS: dict[int, str] = {
-    0: "#f2f3f4",
-    1: "#0b4f9c",
-    2: "#2e86de",
-    3: "#8d5524",
-    4: "#c68642",
-    5: "#a04000",
-    6: "#27ae60",
-    7: "#82e0aa",
-    8: "#145a32",
-    9: "#196f3d",
-    10: "#7dcea0",
-    11: "#b9770e",
-    12: "#0e6655",
+    0: "#f2f3f4",  # Non-wetland / Dry
+    1: "#1f78b4",  # Open Clear Water (Deep)
+    2: "#a6cee3",  # Open Clear Water (Shallow)
+    3: "#e66101",  # Highly Turbid Water
+    4: "#fdb863",  # Moderately Turbid Water
+    5: "#8c510a",  # Moist / Waterlogged Soil
+    6: "#1b9e77",  # Submerged Aquatic Vegetation
+    7: "#6a3d9a",  # Submerged-Turbid Mixed Water
+    8: "#33a02c",  # Emergent / Floating Vegetation
+    9: "#f781bf",  # Emergent-Turbid Mixed Water
+    10: "#b2df8a",  # Moist Vegetated Fringe
+    11: "#d9a441",  # Saturated Sediment Fringe
+    12: "#00a6ca",  # Vegetation-masked Water Fringe
 }
 
 WCT_EMA_QUARTILE_BOUNDARIES: dict = {

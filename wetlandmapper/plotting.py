@@ -38,6 +38,43 @@ __all__ = [
     "plot_wet_frequency",
 ]
 
+_VALID_PALETTES = ("default", "colorblind")
+
+_DYNAMICS_COLORS_COLORBLIND = {
+    0: "#bdbdbd",
+    2: "#cc79a7",
+    3: "#d55e00",
+    4: "#e69f00",
+    5: "#009e73",
+    6: "#56b4e9",
+    10: "#0072b2",
+}
+
+_WCT_COLORS_COLORBLIND = {
+    0: "#bdbdbd",
+    1: "#0072b2",
+    2: "#d55e00",
+    3: "#009e73",
+    4: "#cc79a7",
+    5: "#e69f00",
+}
+
+_WCT_LEVEL2_COLORS_COLORBLIND = {
+    0: "#bdbdbd",
+    1: "#0072b2",
+    2: "#56b4e9",
+    3: "#d55e00",
+    4: "#e69f00",
+    5: "#8c510a",
+    6: "#009e73",
+    7: "#f0e442",
+    8: "#cc79a7",
+    9: "#882255",
+    10: "#44aa99",
+    11: "#aa4499",
+    12: "#332288",
+}
+
 
 # ---------------------------------------------------------------------------
 # Lazy matplotlib import
@@ -138,6 +175,17 @@ def _build_cmap_and_norm(class_codes, class_colors):
     return cmap, norm, codes
 
 
+def _validate_palette(palette: str) -> None:
+    if palette not in _VALID_PALETTES:
+        opts = ", ".join(repr(v) for v in _VALID_PALETTES)
+        raise ValueError(f"Unknown palette {palette!r}. Expected one of: {opts}")
+
+
+def _resolve_colors(default_colors: dict, colorblind_colors: dict, palette: str) -> dict:
+    _validate_palette(palette)
+    return colorblind_colors if palette == "colorblind" else default_colors
+
+
 def _ema_label_from_value(value):
     if isinstance(value, str):
         return value
@@ -151,9 +199,11 @@ def _ema_label_from_value(value):
     return f"W{encoded // 100}V{(encoded // 10) % 10}T{encoded % 10}"
 
 
-def _build_categorical_cmap(n_items):
+def _build_categorical_cmap(n_items, palette: str = "default"):
     plt, mcolors, _ = _get_mpl()
-    base = plt.get_cmap("turbo", max(n_items, 1))
+    _validate_palette(palette)
+    cmap_name = "tab20" if palette == "colorblind" else "turbo"
+    base = plt.get_cmap(cmap_name, max(n_items, 1))
     colors = [base(i) for i in range(max(n_items, 1))]
     cmap = mcolors.ListedColormap(colors)
     norm = mcolors.BoundaryNorm(np.arange(-0.5, n_items + 0.5, 1), cmap.N)
@@ -222,6 +272,7 @@ def plot_dynamics(
     figsize: tuple = (8, 7),
     add_colorbar: bool = True,
     legend_loc: str = "outside right",
+    palette: str = "default",
     savepath: str | None = None,
     dpi: int = 150,
 ):
@@ -244,6 +295,8 @@ def plot_dynamics(
         Legend placement.  Use ``"outside right"`` (default), ``"outside bottom"``,
         or any standard Matplotlib ``loc`` string (e.g. ``"lower right"``).
         ``"outside right"`` / ``"outside bottom"`` never overlap the data.
+    palette : {"default", "colorblind"}
+        Color palette for class display.
     savepath : str, optional
         If given, save the figure to this path (PNG, PDF, TIFF, etc.).
     dpi : int
@@ -257,7 +310,12 @@ def plot_dynamics(
 
     plt, mcolors, mpatches = _get_mpl()
 
-    cmap, norm, codes = _build_cmap_and_norm(DYNAMICS_CLASSES, DYNAMICS_COLORS)
+    class_colors = _resolve_colors(
+        DYNAMICS_COLORS,
+        _DYNAMICS_COLORS_COLORBLIND,
+        palette,
+    )
+    cmap, norm, codes = _build_cmap_and_norm(DYNAMICS_CLASSES, class_colors)
     fig, ax = _ensure_axes(ax, figsize)
 
     da2d = _get_2d(dynamics)
@@ -278,7 +336,7 @@ def plot_dynamics(
 
     if add_colorbar:
         patches = [
-            mpatches.Patch(color=DYNAMICS_COLORS[c], label=DYNAMICS_CLASSES[c])
+            mpatches.Patch(color=class_colors[c], label=DYNAMICS_CLASSES[c])
             for c in sorted(DYNAMICS_CLASSES.keys(), reverse=True)
         ]
         _add_outside_legend(fig, ax, patches, "Dynamics Class", legend_loc)
@@ -298,6 +356,7 @@ def plot_wct(
     figsize: tuple = (8, 7),
     add_colorbar: bool = True,
     legend_loc: str = "outside right",
+    palette: str = "default",
     savepath: str | None = None,
     dpi: int = 150,
 ):
@@ -308,6 +367,8 @@ def plot_wct(
     wct : xr.DataArray
         Output of :func:`wetlandmapper.classify_wct` or
         :func:`wetlandmapper.classify_wct_ema`.
+    palette : {"default", "colorblind"}
+        Color palette for class display.
     ax, title, figsize, add_colorbar, legend_loc, savepath, dpi
         Same as :func:`plot_dynamics`.
 
@@ -319,7 +380,8 @@ def plot_wct(
 
     plt, mcolors, mpatches = _get_mpl()
 
-    cmap, norm, codes = _build_cmap_and_norm(WCT_CLASSES, WCT_COLORS)
+    class_colors = _resolve_colors(WCT_COLORS, _WCT_COLORS_COLORBLIND, palette)
+    cmap, norm, codes = _build_cmap_and_norm(WCT_CLASSES, class_colors)
     fig, ax = _ensure_axes(ax, figsize)
 
     da2d = _get_2d(wct)
@@ -341,7 +403,8 @@ def plot_wct(
     if add_colorbar:
         ordered = [c for c in sorted(WCT_CLASSES.keys()) if c != 0] + [0]
         patches = [
-            mpatches.Patch(color=WCT_COLORS[c], label=WCT_CLASSES[c]) for c in ordered
+            mpatches.Patch(color=class_colors[c], label=WCT_CLASSES[c])
+            for c in ordered
         ]
         _add_outside_legend(fig, ax, patches, "Cover Type", legend_loc)
     else:
@@ -360,6 +423,7 @@ def plot_wct_level2(
     figsize: tuple = (8, 7),
     add_colorbar: bool = True,
     legend_loc: str = "outside right",
+    palette: str = "default",
     savepath: str | None = None,
     dpi: int = 150,
 ):
@@ -370,6 +434,8 @@ def plot_wct_level2(
     wct_level2 : xr.DataArray or xr.Dataset
         Output from :func:`wetlandmapper.classify_wct_ema_level2`, or a
         DataArray containing the ``wetland_cover_type_level2`` values.
+    palette : {"default", "colorblind"}
+        Color palette for class display.
     ax, title, figsize, add_colorbar, legend_loc, savepath, dpi
         Same controls as :func:`plot_wct`.
 
@@ -386,7 +452,12 @@ def plot_wct_level2(
     else:
         da = wct_level2
 
-    cmap, norm, codes = _build_cmap_and_norm(WCT_LEVEL2_CLASSES, WCT_LEVEL2_COLORS)
+    class_colors = _resolve_colors(
+        WCT_LEVEL2_COLORS,
+        _WCT_LEVEL2_COLORS_COLORBLIND,
+        palette,
+    )
+    cmap, norm, codes = _build_cmap_and_norm(WCT_LEVEL2_CLASSES, class_colors)
     fig, ax = _ensure_axes(ax, figsize)
 
     da2d = _get_2d(da)
@@ -408,7 +479,7 @@ def plot_wct_level2(
     if add_colorbar:
         ordered = [c for c in sorted(WCT_LEVEL2_CLASSES.keys()) if c != 0] + [0]
         patches = [
-            mpatches.Patch(color=WCT_LEVEL2_COLORS[c], label=WCT_LEVEL2_CLASSES[c])
+            mpatches.Patch(color=class_colors[c], label=WCT_LEVEL2_CLASSES[c])
             for c in ordered
         ]
         _add_outside_legend(fig, ax, patches, "Cover Type (Level-2)", legend_loc)
@@ -428,6 +499,7 @@ def plot_ema_codes(
     figsize: tuple = (8, 7),
     add_colorbar: bool = True,
     legend_loc: str = "outside right",
+    palette: str = "default",
     savepath: str | None = None,
     dpi: int = 150,
 ):
@@ -440,6 +512,8 @@ def plot_ema_codes(
         integer raster, or a standalone DataArray containing the code values.
     add_colorbar : bool
         Add a legend with one entry per unique code present in the raster.
+    palette : {"default", "colorblind"}
+        Color palette for categorical code display.
 
     Returns
     -------
@@ -471,7 +545,7 @@ def plot_ema_codes(
     encoded = np.array([label_to_index[label] for label in labels], dtype=np.int16)
     encoded = encoded.reshape(raw_values.shape)
 
-    cmap, norm, colors = _build_categorical_cmap(len(unique_labels))
+    cmap, norm, colors = _build_categorical_cmap(len(unique_labels), palette=palette)
 
     ax.imshow(
         encoded,
@@ -508,7 +582,8 @@ def plot_index(
     figsize: tuple = (8, 7),
     vmin: float = -1.0,
     vmax: float = 1.0,
-    cmap: str = "RdYlGn",
+    cmap: str | None = None,
+    palette: str = "default",
     time_step: int | None = None,
     savepath: str | None = None,
     dpi: int = 150,
@@ -524,6 +599,11 @@ def plot_index(
     time_step : int, optional
         Select this time index (0-based) when ``da`` has a time dim.
         Defaults to the temporal mean if not provided.
+    cmap : str, optional
+        Matplotlib colormap name. If omitted, defaults to ``"RdYlGn"`` for
+        ``palette="default"`` and ``"cividis"`` for ``palette="colorblind"``.
+    palette : {"default", "colorblind"}
+        Palette preset used when ``cmap`` is not provided.
     savepath, dpi
         Same as :func:`plot_dynamics`.
 
@@ -532,7 +612,11 @@ def plot_index(
     fig, ax
     """
     plt, _, _ = _get_mpl()
+    _validate_palette(palette)
     fig, ax = _ensure_axes(ax, figsize)
+
+    if cmap is None:
+        cmap = "cividis" if palette == "colorblind" else "RdYlGn"
 
     if "time" in da.dims:
         if time_step is not None:
@@ -575,6 +659,7 @@ def plot_wet_frequency(
     ax=None,
     figsize: tuple = (8, 7),
     mndwi_threshold: float = 0.0,
+    palette: str = "default",
     savepath: str | None = None,
     dpi: int = 150,
 ):
@@ -586,6 +671,8 @@ def plot_wet_frequency(
         Multi-temporal MNDWI with a ``time`` dimension.
     mndwi_threshold : float
         Pixels with MNDWI above this value are counted as wet.
+    palette : {"default", "colorblind"}
+        Palette preset for the frequency colormap.
     savepath, dpi
         Same as :func:`plot_dynamics`.
 
@@ -596,8 +683,9 @@ def plot_wet_frequency(
     from .dynamics import compute_wet_frequency
 
     plt, _, _ = _get_mpl()
+    _validate_palette(palette)
 
-    freq = compute_wet_frequency(mndwi, mndwi_threshold=mndwi_threshold)
+    freq = compute_wet_frequency(mndwi, water_threshold=mndwi_threshold)
     fig, ax = _ensure_axes(ax, figsize)
 
     da2d = _get_2d(freq)
@@ -606,7 +694,7 @@ def plot_wet_frequency(
 
     im = ax.imshow(
         da2d.values,
-        cmap="Blues",
+        cmap="cividis" if palette == "colorblind" else "Blues",
         vmin=0,
         vmax=100,
         origin=origin,
