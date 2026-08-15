@@ -638,6 +638,72 @@ def _normalize_hydroperiod_nan_policy(policy: str) -> str:
     return normalized
 
 
+def _validate_climate_adaptive_params(
+    min_precip_mm: float,
+    hydroperiod_months: int,
+    hydroperiod_nan_policy: str,
+) -> None:
+    """Validate climate-adaptive hydroperiod parameters."""
+    _normalize_hydroperiod_nan_policy(hydroperiod_nan_policy)
+    if min_precip_mm < 0:
+        raise ValueError("min_precip_mm must be >= 0 when climate_adaptive=True.")
+    if not isinstance(hydroperiod_months, int) or hydroperiod_months < 0:
+        raise ValueError(
+            "hydroperiod_months must be an integer >= 0 when climate_adaptive=True."
+        )
+
+
+def _climate_valid_month_mask_numpy(
+    precip_mm: np.ndarray,
+    temp_c: np.ndarray,
+    min_precip_mm: float,
+    min_temp_c: float,
+) -> np.ndarray:
+    """Offline mirror of month-validity filtering used by climate_adaptive mode."""
+    precip = np.asarray(precip_mm, dtype=float)
+    temp = np.asarray(temp_c, dtype=float)
+    if precip.shape != temp.shape:
+        raise ValueError("precip_mm and temp_c must have identical shapes.")
+    return (precip >= min_precip_mm) & (temp >= min_temp_c)
+
+
+def _select_wettest_valid_month_numpy(
+    values: np.ndarray,
+    precip_mm: np.ndarray,
+    valid_mask: np.ndarray,
+) -> np.ndarray:
+    """Offline mirror of qualityMosaic-style wettest-valid-month selection."""
+    vals = np.asarray(values, dtype=float)
+    precip = np.asarray(precip_mm, dtype=float)
+    valid = np.asarray(valid_mask, dtype=bool)
+
+    if vals.shape != precip.shape or vals.shape != valid.shape:
+        raise ValueError("values, precip_mm, and valid_mask must have identical shapes.")
+    if vals.ndim < 1:
+        raise ValueError("values must include a month axis in position 0.")
+
+    masked_precip = np.where(valid, precip, -np.inf)
+    best_idx = np.argmax(masked_precip, axis=0)
+    selected = np.take_along_axis(vals, np.expand_dims(best_idx, axis=0), axis=0)[0]
+    has_valid = np.any(valid, axis=0)
+    return np.where(has_valid, selected, np.nan)
+
+
+def _era5_unit_conversions_numpy(
+    precip_m: np.ndarray,
+    temp_k: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Offline mirror of ERA5 conversions (m->mm and K->C)."""
+    precip = np.asarray(precip_m, dtype=float)
+    temp = np.asarray(temp_k, dtype=float)
+    return precip * 1000.0, temp - 273.15
+
+
+def _format_year_month_key(year: int, month: int) -> str:
+    """Match the join key format used for Landsat/ERA5 year-month joins."""
+    return f"{int(year)}_{int(month):02d}"
+
+
 def _hydroperiod_equivalent_months_numpy(
     wet_months: np.ndarray,
     valid_months: np.ndarray,
@@ -1045,13 +1111,11 @@ def _build_processed_collection(
         )
 
     if climate_adaptive:
-        _normalize_hydroperiod_nan_policy(hydroperiod_nan_policy)
-        if min_precip_mm < 0:
-            raise ValueError("min_precip_mm must be >= 0 when climate_adaptive=True.")
-        if not isinstance(hydroperiod_months, int) or hydroperiod_months < 0:
-            raise ValueError(
-                "hydroperiod_months must be an integer >= 0 when climate_adaptive=True."
-            )
+        _validate_climate_adaptive_params(
+            min_precip_mm=min_precip_mm,
+            hydroperiod_months=hydroperiod_months,
+            hydroperiod_nan_policy=hydroperiod_nan_policy,
+        )
 
     ee_geom = _parse_aoi(aoi)
     sensor_bands: dict[str, str]
