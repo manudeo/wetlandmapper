@@ -1,6 +1,7 @@
 import inspect
 from dataclasses import dataclass
 
+import numpy as np
 import pytest
 
 from wetlandmapper.indices import compute_aweish, compute_aweinsh
@@ -63,6 +64,48 @@ def test_gee_valid_indices_match_indices_module_support():
     """GEE fetch validators should include all index names provided by indices.py."""
     expected = {"MNDWI", "NDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
     assert gee._VALID_INDICES == expected
+
+
+def test_hydroperiod_equivalent_months_valid_policy_ignores_masked_months():
+    """Wet in all valid months should remain fully wet despite many masked months."""
+    wet = np.array([5.0])
+    valid = np.array([5.0])
+    equiv = gee._hydroperiod_equivalent_months_numpy(
+        wet,
+        valid,
+        hydroperiod_nan_policy="valid",
+        months_per_year=12,
+    )
+    assert float(equiv[0]) == pytest.approx(12.0)
+
+
+def test_hydroperiod_equivalent_months_total_policy_counts_masked_as_dry():
+    """Total policy should preserve raw wet-month counts."""
+    wet = np.array([5.0])
+    valid = np.array([5.0])
+    equiv = gee._hydroperiod_equivalent_months_numpy(
+        wet,
+        valid,
+        hydroperiod_nan_policy="total",
+        months_per_year=12,
+    )
+    assert float(equiv[0]) == pytest.approx(5.0)
+
+
+def test_hydroperiod_mean_excludes_empty_years_from_average():
+    """Years with zero valid months should not pull means toward zero."""
+    yearly_equiv = np.array([[[12.0]], [[0.0]]])
+    yearly_valid = np.array([[[4.0]], [[0.0]]])
+    mean_equiv = gee._mean_hydroperiod_over_nonempty_years_numpy(
+        yearly_equiv,
+        yearly_valid,
+    )
+    assert float(mean_equiv[0, 0]) == pytest.approx(12.0)
+
+
+def test_hydroperiod_nan_policy_rejects_invalid_value():
+    with pytest.raises(ValueError, match="hydroperiod_nan_policy"):
+        gee._normalize_hydroperiod_nan_policy("bad_mode")
 
 
 @dataclass

@@ -258,6 +258,7 @@ _SEASONS: dict[str, tuple[list[int], int, int]] = {
 _VALID_AGGREGATIONS = {"all", "annual", "monthly", "seasonal"}
 _VALID_INDICES = {"MNDWI", "NDWI", "NDVI", "NDTI", "AWEIsh", "AWEInsh"}
 _VALID_REDUCTION_METHODS = {"median", "mean", "percentile"}
+_VALID_HYDROPERIOD_NAN_POLICIES = {"valid", "total"}
 _VALID_SINGLE_SENSORS = set(_COLLECTION_ID.keys()) | set(_SENSOR_ALIASES.keys())
 _ALL_VALID_SENSORS = _VALID_SINGLE_SENSORS | {"LandsatAll", "MODISAll"}
 
@@ -626,6 +627,66 @@ def _format_percentile_token(percentile: float) -> str:
     return str(percentile).replace(".", "_")
 
 
+def _normalize_hydroperiod_nan_policy(policy: str) -> str:
+    """Validate and normalize hydroperiod NaN policy."""
+    normalized = policy.lower()
+    if normalized not in _VALID_HYDROPERIOD_NAN_POLICIES:
+        raise ValueError(
+            "hydroperiod_nan_policy must be one of "
+            f"{sorted(_VALID_HYDROPERIOD_NAN_POLICIES)}, got {policy!r}."
+        )
+    return normalized
+
+
+def _hydroperiod_equivalent_months_numpy(
+    wet_months: np.ndarray,
+    valid_months: np.ndarray,
+    hydroperiod_nan_policy: str = "valid",
+    months_per_year: int = 12,
+) -> np.ndarray:
+    """Offline mirror of hydroperiod equivalent-month conversion."""
+    policy = _normalize_hydroperiod_nan_policy(hydroperiod_nan_policy)
+    wet = np.asarray(wet_months, dtype=float)
+    valid = np.asarray(valid_months, dtype=float)
+    if wet.shape != valid.shape:
+        raise ValueError("wet_months and valid_months must have identical shapes.")
+    if months_per_year <= 0:
+        raise ValueError("months_per_year must be > 0.")
+
+    if policy == "total":
+        return wet
+
+    return np.divide(
+        wet * float(months_per_year),
+        valid,
+        out=np.full(wet.shape, np.nan, dtype=float),
+        where=valid > 0,
+    )
+
+
+def _mean_hydroperiod_over_nonempty_years_numpy(
+    yearly_equivalent_months: np.ndarray,
+    yearly_valid_months: np.ndarray,
+) -> np.ndarray:
+    """Offline mirror of mean hydroperiod across years, excluding empty years."""
+    equiv = np.asarray(yearly_equivalent_months, dtype=float)
+    valid = np.asarray(yearly_valid_months, dtype=float)
+    if equiv.shape != valid.shape:
+        raise ValueError(
+            "yearly_equivalent_months and yearly_valid_months must have identical shapes."
+        )
+
+    has_data = valid > 0
+    summed = np.where(has_data, equiv, 0.0).sum(axis=0)
+    counts = has_data.sum(axis=0)
+    return np.divide(
+        summed,
+        counts,
+        out=np.full(summed.shape, np.nan, dtype=float),
+        where=counts > 0,
+    )
+
+
 def _build_composites(
     collection: EEImageCollection,
     temporal_aggregation: str,
@@ -928,6 +989,7 @@ def _build_processed_collection(
     min_precip_mm: float,
     min_temp_c: float,
     hydroperiod_months: int,
+    hydroperiod_nan_policy: str,
     wetness_index: str,
     wetness_threshold: float,
     dem_mask: bool,
@@ -981,6 +1043,15 @@ def _build_processed_collection(
             "wetness_index must be included in index when climate_adaptive=True. "
             f"Got wetness_index={wetness_index!r}, index={indices_list!r}."
         )
+
+    if climate_adaptive:
+        _normalize_hydroperiod_nan_policy(hydroperiod_nan_policy)
+        if min_precip_mm < 0:
+            raise ValueError("min_precip_mm must be >= 0 when climate_adaptive=True.")
+        if not isinstance(hydroperiod_months, int) or hydroperiod_months < 0:
+            raise ValueError(
+                "hydroperiod_months must be an integer >= 0 when climate_adaptive=True."
+            )
 
     ee_geom = _parse_aoi(aoi)
     sensor_bands: dict[str, str]
@@ -1075,6 +1146,7 @@ def _build_processed_collection(
             min_precip_mm=min_precip_mm,
             min_temp_c=min_temp_c,
             hydroperiod_months=hydroperiod_months,
+            hydroperiod_nan_policy=hydroperiod_nan_policy,
         )
     else:
         collection = _build_composites(
@@ -1260,6 +1332,7 @@ def fetch(
     min_precip_mm: float = 20.0,
     min_temp_c: float = 5.0,
     hydroperiod_months: int = 1,
+    hydroperiod_nan_policy: str = "valid",
     wetness_index: str = "MNDWI",
     wetness_threshold: float = 0.0,
     dem_mask: bool = False,
@@ -1371,6 +1444,17 @@ def fetch(
         waterlogging. Used only when ``climate_adaptive=True``.
         Default 1. Increase to 2-3 for stricter wetland delineation;
         ``hydroperiod_months=1`` is often weak for irrigated floodplains.
+        hydroperiod_nan_policy : {"valid", "total"}
+                Denominator policy for hydroperiod wetness aggregation.
+
+                - ``"valid"`` (default): wet fraction is ``wet_months/valid_months``
+                    per year, scaled to equivalent months (x12). Cloud-masked months
+                    are excluded from the denominator.
+                - ``"total"``: wet fraction is relative to all calendar months,
+                    effectively counting masked months as not wet.
+
+                Years with no climate-valid observations are excluded from the
+                multi-year mean in both modes.
     wetness_index : str
         Which index band to use as the wetness indicator for hydroperiod
         counting and qualityMosaic selection. Must be one of the bands
@@ -1463,6 +1547,7 @@ def fetch(
         min_precip_mm=min_precip_mm,
         min_temp_c=min_temp_c,
         hydroperiod_months=hydroperiod_months,
+        hydroperiod_nan_policy=hydroperiod_nan_policy,
         wetness_index=wetness_index,
         wetness_threshold=wetness_threshold,
         dem_mask=dem_mask,
@@ -1565,6 +1650,7 @@ def fetch_xee(
     min_precip_mm: float = 20.0,
     min_temp_c: float = 5.0,
     hydroperiod_months: int = 1,
+    hydroperiod_nan_policy: str = "valid",
     wetness_index: str = "MNDWI",
     wetness_threshold: float = 0.0,
     dem_mask: bool = False,
@@ -1623,6 +1709,7 @@ def fetch_xee(
     project : str, optional
         GEE cloud project ID.
     climate_adaptive, min_precip_mm, min_temp_c, hydroperiod_months,
+    hydroperiod_nan_policy,
     wetness_index, wetness_threshold, dem_mask, max_slope_deg,
     max_tpi_m, tpi_window_px, max_local_range_m,
     local_range_window_px, max_elevation_m
@@ -1701,6 +1788,7 @@ def fetch_xee(
         min_precip_mm=min_precip_mm,
         min_temp_c=min_temp_c,
         hydroperiod_months=hydroperiod_months,
+        hydroperiod_nan_policy=hydroperiod_nan_policy,
         wetness_index=wetness_index,
         wetness_threshold=wetness_threshold,
         dem_mask=dem_mask,
@@ -1831,6 +1919,7 @@ def _build_climate_adaptive_composites(
     min_precip_mm: float = 20.0,
     min_temp_c: float = 5.0,
     hydroperiod_months: int = 1,
+    hydroperiod_nan_policy: str = "valid",
 ) -> EEImageCollection:
     """Build climate-adaptive annual composites guided by ERA5-Land.
 
@@ -1884,6 +1973,14 @@ def _build_climate_adaptive_composites(
         pixel. Pixels below this threshold are masked — they represent
         transient waterlogging rather than persistent wetland. Default 1.
         Increase to 2 or 3 for stricter wetland delineation.
+        hydroperiod_nan_policy : {"valid", "total"}
+                Denominator policy for hydroperiod filtering.
+
+                - ``"valid"``: computes monthly wet fraction using only climate-valid
+                    observations, then scales to equivalent months as
+                    ``wet_months/valid_months * 12``.
+                - ``"total"``: uses raw wet-month counts, equivalent to counting
+                    missing/invalid months as not wet.
 
     Returns
     -------
@@ -1948,6 +2045,7 @@ def _build_climate_adaptive_composites(
     """
     start_yr = datetime.date.fromisoformat(start[:10]).year
     end_yr   = datetime.date.fromisoformat(end[:10]).year
+    hydroperiod_nan_policy = _normalize_hydroperiod_nan_policy(hydroperiod_nan_policy)
 
     # ── ERA5-Land monthly climate data ──────────────────────────────────────
     # Convert units server-side:
@@ -2024,23 +2122,42 @@ def _build_climate_adaptive_composites(
     climate_valid = joined_col.map(_apply_climate_mask)
 
     # ── Hydroperiod mask ─────────────────────────────────────────────────────
-    # For each year, count how many climate-valid months each pixel is wet.
-    # Average across years. Mask pixels below hydroperiod_months.
+    # For each year, estimate wetness in equivalent wet months. Years with no
+    # climate-valid observations are masked and therefore excluded from the
+    # multi-year mean.
     years = ee.List.sequence(start_yr, end_yr)
 
-    def _wet_months_in_year(yr):
+    def _hydroperiod_equivalent_in_year(yr):
         yr_col  = climate_valid.filter(ee.Filter.eq("year", yr))
+        valid_col = yr_col.map(
+            lambda img: img.select(wetness_index).mask().rename("valid").unmask(0)
+        )
         wet_col = yr_col.map(
             lambda img: img.select(wetness_index)
-                           .gt(wetness_threshold)
-                           .rename("wet")
-                           .unmask(0)
+            .gt(wetness_threshold)
+            .rename("wet")
+            .unmask(0)
         )
-        return wet_col.sum().rename("wet_months")
 
-    wet_per_year  = ee.ImageCollection(years.map(_wet_months_in_year))
-    mean_wet_mths = wet_per_year.mean()
-    hydro_mask    = mean_wet_mths.gte(hydroperiod_months)
+        valid_months = valid_col.sum().rename("valid_months")
+        wet_months = wet_col.sum().rename("wet_months")
+
+        if hydroperiod_nan_policy == "valid":
+            wet_equiv = wet_months.divide(valid_months.max(1)).multiply(12.0)
+            wet_equiv = wet_equiv.rename("wet_equiv_months").updateMask(
+                valid_months.gte(1)
+            )
+        else:
+            wet_equiv = wet_months.rename("wet_equiv_months")
+
+        empty = ee.Image.constant(0).rename("wet_equiv_months").updateMask(
+            ee.Image.constant(0)
+        )
+        return ee.Image(ee.Algorithms.If(yr_col.size().gt(0), wet_equiv, empty))
+
+    wet_equiv_per_year = ee.ImageCollection(years.map(_hydroperiod_equivalent_in_year))
+    mean_wet_equiv = wet_equiv_per_year.mean()
+    hydro_mask = mean_wet_equiv.gte(hydroperiod_months)
 
     # ── Per-year best-month composite via qualityMosaic on precipitation ────
     # qualityMosaic picks, per pixel, the values from the image with the
