@@ -325,21 +325,18 @@ def classify_dynamics(
     # ------------------------------------------------------------------
     # Sanity check: no pixel should have a code outside valid set
     # ------------------------------------------------------------------
+    vals = classification.values
+    finite_vals = vals[np.isfinite(vals)] if np.issubdtype(vals.dtype, np.floating) else vals
     unexpected = (
-    set(np.unique(classification.values.astype(int)).tolist())
-    - set(DYNAMICS_CLASSES.keys())
+        set(np.unique(finite_vals).astype(np.int64).tolist())
+        - set(DYNAMICS_CLASSES.keys())
     )
-    valid_codes = np.array(list(DYNAMICS_CLASSES.keys()), dtype=np.int8)
-    # (this is a no-cost check on the non-NaN values)
-    assert (
-        np.isin(
-            classification.values[~np.isnan(classification.values.astype(float))],
-            valid_codes
-        ).all()
-    ), (
-        "classify_dynamics produced invalid class codes — this is a bug. "
-        f"Unexpected values: {unexpected}"
-    )
+    if unexpected:
+        raise RuntimeError(
+            "classify_dynamics produced invalid class codes "
+            f"{sorted(unexpected)}. This is a bug; please report with the input "
+            "that triggered it."
+        )
 
     # ------------------------------------------------------------------
     # Preserve CRS if available

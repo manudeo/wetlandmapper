@@ -227,6 +227,27 @@ class TestClassifyDynamics:
         assert np.isnan(result.sel(y=0, x=1).item())
         assert not np.isnan(result.sel(y=0, x=0).item())
 
+    def test_valid_nan_policy_with_min_valid_obs_emits_no_runtime_warning(self):
+        """NaN handling in output validation should not emit RuntimeWarning."""
+        times = pd.date_range("2020-01-01", periods=6, freq="D")
+        data = np.full((6, 2, 2), np.nan, dtype=float)
+        data[:, 0, 0] = [0.2, 0.3, 0.4, 0.2, 0.1, 0.2]
+        data[:, 0, 1] = [0.2, np.nan, np.nan, np.nan, np.nan, np.nan]
+        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            result = classify_dynamics(
+                da,
+                nYear=3,
+                nan_policy="valid",
+                min_valid_obs=3,
+                thresholdWet=25,
+                thresholdPersis=75,
+            )
+        assert isinstance(result, xr.DataArray)
+        assert not any(isinstance(w.message, RuntimeWarning) for w in record)
+
     def test_deprecated_mndwi_threshold_alias_warns(self, mndwi_all_wet):
         """Deprecated alias should emit warning and still run."""
         with pytest.warns(DeprecationWarning):
