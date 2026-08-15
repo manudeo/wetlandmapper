@@ -1330,6 +1330,8 @@ def fetch(
         climate-adaptive annual composite guided by ERA5-Land precipitation
         and temperature. When enabled, ``temporal_aggregation`` is ignored
         (output is always one image per year). Default ``False``.
+        ERA5-Land is ~11 km, so very small AOIs may receive near-uniform
+        climate ranking and effectively whole-scene month selection.
     months : list of int, optional
         Restrict compositing to these calendar months (1=Jan, ..., 12=Dec).
         Example: [6, 7, 8] for June–August only. Default None (all months).
@@ -1351,6 +1353,8 @@ def fetch(
            wetness rather than an arbitrary median).
         5. Masks pixels wet for fewer than ``hydroperiod_months`` months
            per year on average (removes transient waterlogging).
+          6. Because the selected month is the wettest valid month, this can
+              re-introduce flood-season signals if hydroperiod filtering is weak.
 
     min_precip_mm : float
         Minimum monthly precipitation (mm) to include a month in the
@@ -1365,7 +1369,8 @@ def fetch(
         above ``wetness_threshold``) on average across the full record
         to be retained. Pixels below this are masked as transient
         waterlogging. Used only when ``climate_adaptive=True``.
-        Default 1. Increase to 2-3 for stricter wetland delineation.
+        Default 1. Increase to 2-3 for stricter wetland delineation;
+        ``hydroperiod_months=1`` is often weak for irrigated floodplains.
     wetness_index : str
         Which index band to use as the wetness indicator for hydroperiod
         counting and qualityMosaic selection. Must be one of the bands
@@ -1896,6 +1901,9 @@ def _build_climate_adaptive_composites(
           (273.15 subtracted to convert to degrees C).
         - Available from 1950-01-01 to near-present at 0.1 degree
           (~11 km) resolution; GEE resamples to the Landsat grid.
+                    For AOIs smaller than a few ERA5 cells, precipitation ranking
+                    can be near-uniform and month selection may behave like a
+                    scene-wide choice rather than strong per-pixel adaptation.
 
     Snow exclusion
         ERA5-Land ``total_precipitation_sum`` includes both rainfall and
@@ -1909,6 +1917,10 @@ def _build_climate_adaptive_composites(
         ``thresholdWet`` parameter in :func:`classify_dynamics` operates
         at annual-composite resolution and is applied during
         classification. Both can be used together for a two-stage filter.
+        Because climate-adaptive compositing picks the wettest valid month,
+        ``hydroperiod_months=1`` can be permissive in flood-prone or
+        irrigated landscapes; use 2-3 where false wetland positives are a
+        concern.
 
     Examples
     --------

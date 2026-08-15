@@ -156,6 +156,14 @@ def classify_dynamics(
     ----------
     Singh, M. & Sinha, R. (2022). Remote Sensing Letters, 13(1), 1–13.
     https://doi.org/10.1080/2150704X.2021.1980919
+
+    Notes
+    -----
+    Published settings in Singh & Sinha (2022) use ``nYear=5``,
+    ``thresholdWet=50`` and ``thresholdPersis=90``. Package defaults are
+    ``nYear=3``, ``thresholdWet=25`` and ``thresholdPersis=75`` for broader
+    transferability; set parameters explicitly when reproducing published
+    areal totals.
     """
     # ------------------------------------------------------------------
     # Backward-compatibility shim

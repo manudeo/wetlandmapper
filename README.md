@@ -20,7 +20,8 @@
 | `classify_wct` / `classify_wct_ema` | MNDWI + NDVI + NDTI combination ([Singh et al. 2022, *EMA*](https://doi.org/10.1007/s10661-022-10541-7)) | 6 classes (1 non-wetland + 5 biophysical types) |
 | `classify_wct_ema_level2` | Extended EMA lookup using the same MNDWI + NDVI + NDTI bins | 13 classes (1 non-wetland + 12 Level-2 biophysical subclasses) |
 
-The mapping algorithm is climate- and terrian-adaptive, based on methods developed in Singh and Tooth (in prep.). 
+The workflow is climate-guided during acquisition and supports optional terrain conditioning,
+based on methods developed in Singh and Tooth (in prep.).
 
 Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, MODIS, etc.) and require **no labelled training data**. Data can be supplied by the user or fetched directly from **Google Earth Engine** using any Landsat mission, Sentinel-2, or MODIS.
 
