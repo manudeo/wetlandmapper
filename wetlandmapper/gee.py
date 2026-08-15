@@ -2000,16 +2000,9 @@ def _build_climate_adaptive_composites(
 
     joined_col = ee.ImageCollection(joined.map(_merge_pair))
 
-    # Filter to climate-valid months: warm enough AND wet enough
-    climate_valid = joined_col.filter(
-        ee.Filter.And(
-            ee.Filter.gte("precip_mm", min_precip_mm),  # server-side property?
-            # Property-level filter won't work for raster values;
-            # use a pixel-level mask instead (applied per image below)
-        )
-    )
-
-    # Apply pixel-level climate mask (ERA5 at ~11 km resamples to Landsat grid)
+    # Apply a pixel-level climate mask. Image property filters cannot express
+    # per-pixel thresholds on raster bands like precip_mm and temp_c.
+    # (ERA5 at ~11 km is resampled to Landsat grid for this masking step.)
     def _apply_climate_mask(img):
         precip_ok = img.select("precip_mm").gte(min_precip_mm)
         temp_ok   = img.select("temp_c").gte(min_temp_c)
