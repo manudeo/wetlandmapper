@@ -214,8 +214,9 @@ class TestComputeAWEInsh:
 
     def test_output_is_dataarray(self, multispectral_ds):
         """compute_aweinsh should return a DataArray."""
+        ds = multispectral_ds.assign(swir2=multispectral_ds["swir"])
         result = compute_aweinsh(
-            multispectral_ds,
+            ds,
             green_band="green",
             nir_band="nir",
             swir_band="swir",
@@ -224,29 +225,34 @@ class TestComputeAWEInsh:
 
     def test_output_name(self, multispectral_ds):
         """AWEInsh output should be named 'AWEInsh'."""
-        result = compute_aweinsh(multispectral_ds)
+        ds = multispectral_ds.assign(swir2=multispectral_ds["swir"])
+        result = compute_aweinsh(ds)
         assert result.name == "AWEInsh"
 
     def test_water_threshold_in_attrs(self, multispectral_ds):
         """AWEInsh should have water_threshold=0.0 in attrs."""
-        result = compute_aweinsh(multispectral_ds)
+        ds = multispectral_ds.assign(swir2=multispectral_ds["swir"])
+        result = compute_aweinsh(ds)
         assert "water_threshold" in result.attrs
         assert result.attrs["water_threshold"] == 0.0
 
     def test_output_spatial_dims(self, multispectral_ds):
         """Output should preserve spatial dimensions (y, x)."""
-        result = compute_aweinsh(multispectral_ds)
+        ds = multispectral_ds.assign(swir2=multispectral_ds["swir"])
+        result = compute_aweinsh(ds)
         assert result.dims == ("y", "x")
 
     def test_positive_for_water(self, multispectral_ds):
         """Open water should yield positive AWEInsh."""
-        aweinsh = compute_aweinsh(multispectral_ds)
+        ds = multispectral_ds.assign(swir2=multispectral_ds["swir"])
+        aweinsh = compute_aweinsh(ds)
         # Zone 1 (open water) should be positive
         assert (aweinsh.isel(y=slice(0, 5)) > 0).any()
 
     def test_negative_for_nonwater(self, multispectral_ds):
         """Non-water areas should yield negative AWEInsh."""
-        aweinsh = compute_aweinsh(multispectral_ds)
+        ds = multispectral_ds.assign(swir2=multispectral_ds["swir"])
+        aweinsh = compute_aweinsh(ds)
         # Zone 3 (vegetation) should be negative
         assert (aweinsh.isel(y=slice(10, 15)) < 0).any()
 
@@ -258,6 +264,25 @@ class TestComputeAWEInsh:
                 green_band="green_nonexistent",
                 nir_band="nir",
             )
+
+    def test_matches_hand_computed_formula_with_distinct_swir_bands(self):
+        """AWEInsh should match Feyisa formula using SWIR2 in the 2.75 term."""
+        ds = xr.Dataset(
+            {
+                "green": xr.DataArray([[0.20]], dims=["y", "x"]),
+                "nir": xr.DataArray([[0.10]], dims=["y", "x"]),
+                "swir": xr.DataArray([[0.05]], dims=["y", "x"]),
+                "swir2": xr.DataArray([[0.30]], dims=["y", "x"]),
+            }
+        )
+        out = compute_aweinsh(ds)
+        expected = 4.0 * (0.20 - 0.05) - (0.25 * 0.10 + 2.75 * 0.30)
+        assert float(out.values[0, 0]) == pytest.approx(expected, abs=1e-12)
+
+    def test_missing_swir2_band_raises(self, multispectral_ds):
+        """SWIR2 is required by published AWEInsh formula."""
+        with pytest.raises(KeyError):
+            compute_aweinsh(multispectral_ds, swir2_band="swir2_nonexistent")
 
 
 class TestComputeWaterIndices:

@@ -32,7 +32,7 @@ WetlandMapper supports multiple water detection indices for optimal performance 
 - **MNDWI** (Modified NDWI): Best for most applications, uses SWIR band
 - **NDWI** (Original NDWI): Alternative using NIR band, less sensitive to built-up areas  
 - **AWEIsh** (Shadow-corrected): Superior in mountainous terrain with shadows; requires SWIR2 band
-- **AWEInsh** (No shadow suppression): Lighter computation without SWIR2; better in areas with atmospheric haze
+- **AWEInsh** (No shadow suppression): Published Feyisa et al. form using SWIR2 in the final term
 
 Use `compute_water_indices()` to compare all indices on your data.
 
@@ -87,7 +87,7 @@ separate deep vs shallow water, turbidity intensity, and mixed/fringe states.
 WetlandMapper also provides additional water indices for enhanced wetland detection:
 
 - **AWEIsh (Automated Water Extraction Index Shadow)**: Effective for water body extraction in various environments.
-- **AWEInsh (Automated Water Extraction Index No Shadow)**: Similar to AWEIsh but without shadow consideration.
+- **AWEInsh (Automated Water Extraction Index No Shadow)**: Uses SWIR1 contrast plus an NIR/SWIR2 penalty term.
 
 ## Terrain Analysis
 

@@ -344,14 +344,11 @@ def compute_aweinsh(
     green_band: str = "green",
     nir_band: str = "nir",
     swir_band: str = "swir",
+    swir2_band: str = "swir2",
 ) -> xr.DataArray:
     """Compute the Automated Water Extraction Index without shadow suppression.
 
-    AWEInsh = 4*(Green - SWIR1) - (0.25*NIR + 2.75*SWIR1)
-
-    A simplified water index that omits SWIR2 and is computationally lighter
-    than AWEIsh. Less effective at suppressing shadow, but robust in areas
-    affected by atmospheric haze or aerosol loading.
+    AWEInsh = 4*(Green - SWIR1) - (0.25*NIR + 2.75*SWIR2)
 
     Parameters
     ----------
@@ -364,6 +361,8 @@ def compute_aweinsh(
         Default ``"nir"``.
     swir_band : str
         SWIR1. Default ``"swir"``.
+    swir2_band : str
+        SWIR2. Default ``"swir2"``.
 
     Returns
     -------
@@ -384,7 +383,8 @@ def compute_aweinsh(
     green = _get_band(ds, green_band)
     nir = _get_band(ds, nir_band)
     swir = _get_band(ds, swir_band)
-    aweinsh = 4.0 * (green - swir) - (0.25 * nir + 2.75 * swir)
+    swir2 = _get_band(ds, swir2_band)
+    aweinsh = 4.0 * (green - swir) - (0.25 * nir + 2.75 * swir2)
     aweinsh.name = "AWEInsh"
     aweinsh.attrs.update(
         long_name="Automated Water Extraction Index (no shadow suppression)",
@@ -466,6 +466,7 @@ def compute_indices(
             green_band=green_band,
             nir_band=nir_band,
             swir_band=swir_band,
+            swir2_band=swir2_band,
         )
 
     return xr.Dataset(result)
@@ -533,6 +534,7 @@ def compute_water_indices(
         green_band=green_band,
         nir_band=nir_band,
         swir_band=swir_band,
+        swir2_band=swir2_band,
     )
     return xr.Dataset(
         {

@@ -371,14 +371,14 @@ def _add_indices(image: EEImage, bands: dict[str, str]) -> EEImage:
         .subtract(image.select(bands["swir2"]).multiply(0.25))
         .rename("AWEIsh")
     )
-    # AWEInsh = 4*(Green - SWIR1) - (0.25*NIR + 2.75*SWIR1)
+    # AWEInsh = 4*(Green - SWIR1) - (0.25*NIR + 2.75*SWIR2)
     aweinsh = (
         image.select(bands["green"])
         .subtract(image.select(bands["swir"]))
         .multiply(4.0)
         .subtract(
             image.select(bands["nir"]).multiply(0.25)
-            .add(image.select(bands["swir"]).multiply(2.75))
+            .add(image.select(bands["swir2"]).multiply(2.75))
         )
         .rename("AWEInsh")
     )
