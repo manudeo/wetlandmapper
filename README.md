@@ -293,6 +293,37 @@ wet_freq = compute_wet_frequency(mndwi, threshold=0.0)  # returns 0–100 %
 
 Useful for understanding wetland persistence before classification.
 
+### Class Summary Statistics (Dynamics and WCT)
+
+```python
+from wetlandmapper import summarize_dynamics, summarize_wct
+
+# Dynamics summary (counts + percentages)
+dyn_stats = summarize_dynamics(dynamics)
+print(dyn_stats)
+
+# WCT Level-1 summary
+wct_stats = summarize_wct(wct["wetland_cover_type"])
+print(wct_stats)
+
+# WCT Level-2 summary with area output
+# pixel_area is in m^2 (e.g., 30m Landsat pixel = 900 m^2)
+wct_l2_stats = summarize_wct(
+    wct_level2,
+    level2=True,
+    pixel_area=900.0,
+    area_unit="km2",
+)
+print(wct_l2_stats)
+```
+
+The summary output includes per-class:
+
+- `pixel_count`
+- `percent_of_valid`
+- `class_name`
+- `area_km2` / `area_m2` / `area_ha` (when `pixel_area` is provided)
+
 ### Terrain Analysis
 
 ```python

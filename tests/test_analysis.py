@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from wetlandmapper import last_occurrence
+from wetlandmapper import class_summary, last_occurrence, summarize_dynamics, summarize_wct
+from wetlandmapper.dynamics import DYNAMICS_CLASSES
+from wetlandmapper.wct import WCT_CLASSES, WCT_LEVEL2_CLASSES
 
 
 @pytest.fixture
@@ -197,3 +199,59 @@ def test_last_occurrence_nan_handling(sample_dataarray):
     # (behavior depends on implementation details of skipna)
     assert isinstance(year_last.values, np.ndarray)
     assert isinstance(value_last.values, np.ndarray)
+
+
+def test_class_summary_dataarray_counts_and_percent():
+    arr = xr.DataArray(
+        np.array([[0, 1, 1], [2, 2, np.nan]], dtype=float),
+        dims=["y", "x"],
+        name="classes",
+    )
+    summary = class_summary(arr, class_labels={0: "A", 1: "B", 2: "C"})
+
+    assert set(summary.data_vars) >= {"pixel_count", "percent_of_valid", "class_name"}
+    assert int(summary["pixel_count"].sel(class_code=0)) == 1
+    assert int(summary["pixel_count"].sel(class_code=1)) == 2
+    assert int(summary["pixel_count"].sel(class_code=2)) == 2
+    assert summary.attrs["total_valid_pixels"] == 5
+
+
+def test_class_summary_dataset_variable_selection():
+    ds = xr.Dataset(
+        {
+            "a": xr.DataArray(np.array([[0, 0], [1, 1]], dtype=float), dims=["y", "x"]),
+            "b": xr.DataArray(np.array([[2, 2], [2, 2]], dtype=float), dims=["y", "x"]),
+        }
+    )
+    summary = class_summary(ds, variable="b")
+    assert int(summary["pixel_count"].sel(class_code=2)) == 4
+
+
+def test_class_summary_area_output():
+    arr = xr.DataArray(np.array([[0, 1], [1, 1]], dtype=float), dims=["y", "x"])
+    summary = class_summary(arr, pixel_area=100.0, area_unit="m2")
+    assert "area_m2" in summary
+    assert float(summary["area_m2"].sel(class_code=1)) == 300.0
+
+
+def test_summarize_dynamics_wrapper(mndwi_mixed):
+    from wetlandmapper import classify_dynamics
+
+    dynamics = classify_dynamics(mndwi_mixed)
+    summary = summarize_dynamics(dynamics)
+    assert set(summary["class_code"].values.tolist()) == set(DYNAMICS_CLASSES.keys())
+
+
+def test_summarize_wct_wrappers(multispectral_ds):
+    from wetlandmapper import compute_indices
+    from wetlandmapper.wct import classify_wct_ema, classify_wct_ema_level2
+
+    indices = compute_indices(multispectral_ds)
+    wct_l1 = classify_wct_ema(indices)["wetland_cover_type"]
+    wct_l2 = classify_wct_ema_level2(indices)
+
+    summary_l1 = summarize_wct(wct_l1)
+    summary_l2 = summarize_wct(wct_l2, level2=True)
+
+    assert set(summary_l1["class_code"].values.tolist()) == set(WCT_CLASSES.keys())
+    assert set(summary_l2["class_code"].values.tolist()) == set(WCT_LEVEL2_CLASSES.keys())

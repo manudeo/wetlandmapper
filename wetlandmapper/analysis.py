@@ -8,12 +8,198 @@ Functions
 last_occurrence
     Find the year-fraction and index value of the last time each pixel was "on"
     (above a threshold) for one or more indices.
+class_summary
+    Summarise class-code rasters as counts, percentages, and optional area.
+summarize_dynamics
+    Convenience wrapper around :func:`class_summary` for dynamics outputs.
+summarize_wct
+    Convenience wrapper around :func:`class_summary` for WCT outputs.
 """
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import xarray as xr
+
+
+def _extract_class_dataarray(
+    classes: xr.DataArray | xr.Dataset,
+    variable: str | None,
+) -> xr.DataArray:
+    if isinstance(classes, xr.DataArray):
+        return classes
+
+    if variable is not None:
+        if variable not in classes.data_vars:
+            raise ValueError(
+                f"Variable {variable!r} not found in Dataset. "
+                f"Available: {list(classes.data_vars)}"
+            )
+        return classes[variable]
+
+    preferred = [
+        "wetland_cover_type_level2",
+        "wetland_cover_type",
+        "dynamics",
+        "wetland_dynamics",
+    ]
+    for name in preferred:
+        if name in classes.data_vars:
+            return classes[name]
+
+    if len(classes.data_vars) == 1:
+        return next(iter(classes.data_vars.values()))
+
+    raise ValueError(
+        "Could not infer class variable from Dataset. Pass variable=... "
+        f"Available: {list(classes.data_vars)}"
+    )
+
+
+def _area_factor(area_unit: str) -> float:
+    factors = {
+        "m2": 1.0,
+        "km2": 1e-6,
+        "ha": 1e-4,
+    }
+    if area_unit not in factors:
+        raise ValueError(
+            f"Unsupported area_unit {area_unit!r}. "
+            "Use one of: 'm2', 'km2', 'ha'."
+        )
+    return factors[area_unit]
+
+
+def class_summary(
+    classes: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    class_labels: dict[int, str] | None = None,
+    pixel_area: float | None = None,
+    area_unit: str = "km2",
+    include_all_labels: bool = True,
+) -> xr.Dataset:
+    """Summarise class-code rasters as counts, percentages, and optional area.
+
+    Parameters
+    ----------
+    classes : xr.DataArray or xr.Dataset
+        Class-coded raster.
+    variable : str, optional
+        Variable name when ``classes`` is a Dataset.
+    class_labels : dict[int, str], optional
+        Mapping of class code to class name. When provided and
+        ``include_all_labels=True``, rows for missing classes are included
+        with zero counts.
+    pixel_area : float, optional
+        Area represented by one pixel in square metres. If provided,
+        area statistics are included.
+    area_unit : {"m2", "km2", "ha"}
+        Unit for the output area column.
+    include_all_labels : bool
+        Include all keys in ``class_labels`` even if absent in the raster.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset indexed by ``class_code`` with variables:
+        ``pixel_count``, ``percent_of_valid``, ``class_name`` and,
+        when ``pixel_area`` is provided, ``area_<unit>``.
+    """
+    da = _extract_class_dataarray(classes, variable=variable)
+
+    vals = np.asarray(da.values).ravel()
+    valid = vals[np.isfinite(vals)]
+    if valid.size == 0:
+        raise ValueError("No finite class values found in input.")
+
+    valid_int = valid.astype(np.int64)
+    observed_codes, observed_counts = np.unique(valid_int, return_counts=True)
+
+    observed_map = {
+        int(code): int(count)
+        for code, count in zip(observed_codes.tolist(), observed_counts.tolist())
+    }
+
+    if class_labels is not None and include_all_labels:
+        class_codes = sorted(class_labels.keys())
+    else:
+        class_codes = sorted(observed_map.keys())
+
+    counts = np.array([observed_map.get(c, 0) for c in class_codes], dtype=np.int64)
+    total = int(valid_int.size)
+    pct = (counts.astype(float) / float(total)) * 100.0
+
+    if class_labels is None:
+        names = np.array([str(c) for c in class_codes], dtype=object)
+    else:
+        names = np.array(
+            [class_labels.get(c, f"Unknown ({c})") for c in class_codes],
+            dtype=object,
+        )
+
+    out = xr.Dataset(
+        data_vars={
+            "pixel_count": ("class_code", counts),
+            "percent_of_valid": ("class_code", pct),
+            "class_name": ("class_code", names),
+        },
+        coords={"class_code": np.array(class_codes, dtype=np.int64)},
+    )
+
+    if pixel_area is not None:
+        if pixel_area <= 0:
+            raise ValueError("pixel_area must be > 0 when provided.")
+        factor = _area_factor(area_unit)
+        out[f"area_{area_unit}"] = ("class_code", counts.astype(float) * pixel_area * factor)
+
+    out.attrs.update(
+        total_valid_pixels=total,
+        source_variable=da.name if da.name is not None else "unnamed",
+    )
+    return out
+
+
+def summarize_dynamics(
+    dynamics: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    pixel_area: float | None = None,
+    area_unit: str = "km2",
+) -> xr.Dataset:
+    """Summarise dynamics classes with canonical class labels."""
+    from .dynamics import DYNAMICS_CLASSES
+
+    return class_summary(
+        dynamics,
+        variable=variable,
+        class_labels=DYNAMICS_CLASSES,
+        pixel_area=pixel_area,
+        area_unit=area_unit,
+        include_all_labels=True,
+    )
+
+
+def summarize_wct(
+    wct: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    level2: bool = False,
+    pixel_area: float | None = None,
+    area_unit: str = "km2",
+) -> xr.Dataset:
+    """Summarise WCT classes with Level-1 or Level-2 canonical labels."""
+    from .wct import WCT_CLASSES, WCT_LEVEL2_CLASSES
+
+    labels = WCT_LEVEL2_CLASSES if level2 else WCT_CLASSES
+
+    return class_summary(
+        wct,
+        variable=variable,
+        class_labels=labels,
+        pixel_area=pixel_area,
+        area_unit=area_unit,
+        include_all_labels=True,
+    )
 
 
 def last_occurrence(
@@ -199,8 +385,9 @@ def last_occurrence(
         # Reverse time and find first True (latest in original time).
         # then map back to original time indices
         above_threshold_reversed = above_threshold.isel(time=slice(None, None, -1))
-        first_along_time_reversed = above_threshold_reversed.argmax(
-            dim="time", skipna=False
+        first_along_time_reversed = cast(
+            xr.DataArray,
+            above_threshold_reversed.argmax(dim="time", skipna=False),
         )
 
         # Index in reversed array (0=last in original, 1=second-to-last, ...).
