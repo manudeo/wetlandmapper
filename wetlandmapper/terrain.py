@@ -49,6 +49,8 @@ the ``dem_mask`` parameter of :func:`wetlandmapper.gee.fetch`.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import xarray as xr
 
@@ -95,6 +97,48 @@ def _spatial_dims(da: xr.DataArray) -> tuple[str, str]:
     )
 
 
+def _infer_coord_units(
+    dem: xr.DataArray,
+    y_coords: np.ndarray,
+    x_coords: np.ndarray,
+    coord_units: str,
+) -> str:
+    """Resolve coordinate interpretation for spacing conversion."""
+    if coord_units not in {"auto", "degrees", "metres"}:
+        raise ValueError(
+            "coord_units must be one of 'auto', 'degrees', or 'metres'. "
+            f"Got {coord_units!r}."
+        )
+
+    if coord_units != "auto":
+        return coord_units
+
+    if _HAS_RIO:
+        try:
+            crs = dem.rio.crs
+            if crs is not None:
+                if getattr(crs, "is_projected", False):
+                    return "metres"
+                if getattr(crs, "is_geographic", False):
+                    return "degrees"
+        except Exception:
+            pass
+
+    y_absmax = float(np.nanmax(np.abs(y_coords.astype(float))))
+    x_absmax = float(np.nanmax(np.abs(x_coords.astype(float))))
+    is_geographic = y_absmax <= 90.0 and x_absmax <= 360.0
+
+    assumed = "degrees" if is_geographic else "metres"
+    warnings.warn(
+        "DEM has no readable CRS; assuming "
+        f"{assumed} coordinate units from coordinate ranges. "
+        "Set coord_units='degrees' or 'metres' to override.",
+        UserWarning,
+        stacklevel=3,
+    )
+    return assumed
+
+
 # ---------------------------------------------------------------------------
 # Slope
 
@@ -102,6 +146,7 @@ def _spatial_dims(da: xr.DataArray) -> tuple[str, str]:
 def compute_slope(
     dem: xr.DataArray,
     units: str = "degrees",
+    coord_units: str = "auto",
 ) -> xr.DataArray:
     """Compute terrain slope from a DEM DataArray.
 
@@ -113,9 +158,18 @@ def compute_slope(
     ----------
     dem : xr.DataArray
         Digital Elevation Model with spatial dimensions ``(y, x)`` or
-        ``(lat, lon)``.  Units should be metres.
+        ``(lat, lon)``. Elevation values are expected to be in metres.
     units : {"degrees", "radians", "percent"}
         Output slope units.  Default ``"degrees"``.
+    coord_units : {"auto", "degrees", "metres"}
+        Coordinate interpretation for converting pixel spacing to metres.
+
+        - ``"auto"``: detect from ``dem.rio.crs`` if available; otherwise
+          infer from coordinate ranges and emit a ``UserWarning``.
+        - ``"degrees"``: treat coordinates as geographic degrees.
+        - ``"metres"``: treat coordinates as projected metres.
+
+        Default ``"auto"``.
 
     Returns
     -------
@@ -138,9 +192,17 @@ def compute_slope(
         )
 
     elev = dem.values.astype(float)
-    dy_m = abs(float(np.mean(np.diff(y_coords)))) * 111_320.0
-    mid_lat_rad = np.deg2rad(float(np.mean(y_coords)))
-    dx_m = abs(float(np.mean(np.diff(x_coords)))) * 111_320.0 * np.cos(mid_lat_rad)
+    resolved_units = _infer_coord_units(dem, y_coords, x_coords, coord_units)
+    if resolved_units == "degrees":
+        dy_m = abs(float(np.mean(np.diff(y_coords)))) * 111_320.0
+        mid_lat_rad = np.deg2rad(float(np.mean(y_coords)))
+        dx_m = abs(float(np.mean(np.diff(x_coords)))) * 111_320.0 * np.cos(mid_lat_rad)
+    else:
+        dy_m = abs(float(np.mean(np.diff(y_coords))))
+        dx_m = abs(float(np.mean(np.diff(x_coords))))
+
+    if not np.isfinite(dy_m) or not np.isfinite(dx_m) or dy_m <= 0 or dx_m <= 0:
+        raise ValueError("Derived pixel spacing must be finite and positive.")
 
     grad_y, grad_x = np.gradient(elev, dy_m, dx_m)
     slope_rad = np.arctan(np.sqrt(grad_x**2 + grad_y**2))
@@ -195,6 +257,8 @@ def compute_tpi(
     window : int
         Size of the square focal window in pixels.  Odd numbers produce
         a symmetric neighbourhood.  Default 5 (5 x 5 = 25-pixel window).
+        This operation is pixel-window based and does not use CRS or
+        coordinate-unit conversion.
 
     Returns
     -------
@@ -244,6 +308,8 @@ def compute_local_range(
         Digital Elevation Model with spatial dimensions ``(y, x)``.
     window : int
         Square window size in pixels.  Default 5 (5 x 5 window).
+        This operation is pixel-window based and does not use CRS or
+        coordinate-unit conversion.
 
     Returns
     -------

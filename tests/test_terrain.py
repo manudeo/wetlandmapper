@@ -79,6 +79,69 @@ class TestComputeSlope:
         with pytest.raises(ValueError):
             compute_slope(dem)
 
+    def test_projected_grid_returns_expected_planar_slope(self):
+        """Projected coordinates in metres should recover known planar slope."""
+        theta_deg = 10.0
+        spacing_m = 30.0
+        nx = 50
+        ny = 40
+        x = 500000.0 + np.arange(nx) * spacing_m
+        y = 3300000.0 + np.arange(ny) * spacing_m
+        plane_1d = np.tan(np.deg2rad(theta_deg)) * (x - x[0])
+        plane = np.broadcast_to(plane_1d, (ny, nx)).copy()
+        dem = xr.DataArray(plane, dims=["y", "x"], coords={"y": y, "x": x})
+
+        slope = compute_slope(dem)
+        assert float(slope.mean()) == pytest.approx(theta_deg, abs=0.1)
+
+    def test_geographic_grid_returns_similar_planar_slope(self):
+        """Equivalent geographic spacing should match projected slope."""
+        theta_deg = 10.0
+        spacing_m = 30.0
+        nx = 50
+        ny = 40
+        lat0 = 20.0
+        dlat = spacing_m / 111_320.0
+        dlon = spacing_m / (111_320.0 * np.cos(np.deg2rad(lat0)))
+        lat = lat0 + np.arange(ny) * dlat
+        lon = 80.0 + np.arange(nx) * dlon
+        plane_1d = np.tan(np.deg2rad(theta_deg)) * np.arange(nx, dtype=float) * spacing_m
+        plane = np.broadcast_to(plane_1d, (ny, nx)).copy()
+        dem = xr.DataArray(plane, dims=["lat", "lon"], coords={"lat": lat, "lon": lon})
+
+        slope = compute_slope(dem)
+        assert float(slope.mean()) == pytest.approx(theta_deg, abs=0.5)
+
+    def test_no_crs_projected_looking_coords_warn(self):
+        """Auto mode should warn when inferring projected units without CRS."""
+        x = 700000.0 + np.arange(20) * 30.0
+        y = 3200000.0 + np.arange(20) * 30.0
+        dem = xr.DataArray(
+            np.random.rand(20, 20) * 1000.0,
+            dims=["y", "x"],
+            coords={"y": y, "x": x},
+        )
+        with pytest.warns(UserWarning, match="assuming metres coordinate units"):
+            compute_slope(dem)
+
+    def test_forced_degrees_on_projected_grid_reproduces_old_bias(self):
+        """coord_units override should allow legacy degree interpretation."""
+        theta_deg = 10.0
+        spacing_m = 30.0
+        nx = 30
+        ny = 30
+        x = 500000.0 + np.arange(nx) * spacing_m
+        y = 3300000.0 + np.arange(ny) * spacing_m
+        plane_1d = np.tan(np.deg2rad(theta_deg)) * (x - x[0])
+        plane = np.broadcast_to(plane_1d, (ny, nx)).copy()
+        dem = xr.DataArray(plane, dims=["y", "x"], coords={"y": y, "x": x})
+
+        slope_auto = compute_slope(dem)
+        slope_forced = compute_slope(dem, coord_units="degrees")
+
+        assert float(slope_auto.mean()) == pytest.approx(theta_deg, abs=0.1)
+        assert float(slope_forced.mean()) < 0.05
+
 
 class TestComputeTPI:
     """Test Topographic Position Index computation."""
@@ -393,6 +456,16 @@ class TestSlopeUnits:
         )
         with pytest.raises(ValueError, match="units must be one of"):
             compute_slope(dem, units="invalid")
+
+    def test_invalid_coord_units_raises(self):
+        """Invalid coordinate units should raise ValueError."""
+        dem = xr.DataArray(
+            np.random.rand(5, 5),
+            dims=["y", "x"],
+            coords={"y": np.arange(5), "x": np.arange(5)},
+        )
+        with pytest.raises(ValueError, match="coord_units must be one of"):
+            compute_slope(dem, coord_units="invalid")
 
 
 class TestLatLonCoordinates:
