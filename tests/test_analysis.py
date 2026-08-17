@@ -666,6 +666,10 @@ def test_detect_wet_events_dataset_validation():
 
 
 def test_summarize_by_polygons_validation_branches(tmp_path):
+    gpd = pytest.importorskip("geopandas")
+    shapely = pytest.importorskip("shapely")
+    box = shapely.box
+
     da = xr.DataArray(
         np.array([[[1.0]]]),
         dims=["time", "y", "x"],
@@ -676,9 +680,6 @@ def test_summarize_by_polygons_validation_branches(tmp_path):
         summarize_by_polygons(da, polygons=123)
 
     arr_no_spatial = xr.DataArray(np.array([[1.0, 2.0]]), dims=["time", "z"])
-    gpd = pytest.importorskip("geopandas")
-    shapely = pytest.importorskip("shapely")
-    box = shapely.box
     gdf = gpd.GeoDataFrame({"geometry": [box(-1, -1, 1, 1)]})
 
     with pytest.raises(ValueError, match="spatial dimensions"):
