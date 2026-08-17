@@ -360,7 +360,9 @@ def classify_dynamics(
     # Sanity check: no pixel should have a code outside valid set
     # ------------------------------------------------------------------
     vals = classification.values
-    finite_vals = vals[np.isfinite(vals)] if np.issubdtype(vals.dtype, np.floating) else vals
+    finite_vals = (
+        vals[np.isfinite(vals)] if np.issubdtype(vals.dtype, np.floating) else vals
+    )
     unexpected = (
         set(np.unique(finite_vals).astype(np.int64).tolist())
         - set(DYNAMICS_CLASSES.keys())

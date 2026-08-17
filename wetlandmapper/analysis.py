@@ -152,7 +152,10 @@ def class_summary(
         if pixel_area <= 0:
             raise ValueError("pixel_area must be > 0 when provided.")
         factor = _area_factor(area_unit)
-        out[f"area_{area_unit}"] = ("class_code", counts.astype(float) * pixel_area * factor)
+        out[f"area_{area_unit}"] = (
+            "class_code",
+            counts.astype(float) * pixel_area * factor,
+        )
 
     out.attrs.update(
         total_valid_pixels=total,
