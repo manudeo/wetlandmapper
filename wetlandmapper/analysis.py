@@ -5,6 +5,9 @@ Post-processing and analysis utilities for wetland indices xarray data.
 
 Functions
 ---------
+linear_trend
+    Fit per-pixel linear trend against time (fractional years) and return
+    slope, intercept, and p-value.
 last_occurrence
     Find the year-fraction and index value of the last time each pixel was "on"
     (above a threshold) for one or more indices.
@@ -18,6 +21,8 @@ summarize_wct
 
 from __future__ import annotations
 
+import warnings
+from math import erfc
 from typing import cast
 
 import numpy as np
@@ -70,6 +75,183 @@ def _area_factor(area_unit: str) -> float:
             "Use one of: 'm2', 'km2', 'ha'."
         )
     return factors[area_unit]
+
+
+def _time_to_year_fraction(time_coord: xr.DataArray) -> xr.DataArray:
+    """Convert a datetime-like time coordinate to decimal years."""
+    import pandas as pd
+
+    try:
+        t = pd.to_datetime(time_coord.values)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise ValueError(
+            "Time coordinate must be datetime-like for linear_trend()."
+        ) from exc
+
+    year = np.asarray(t.year, dtype=float)
+    day_of_year = np.asarray(t.dayofyear, dtype=float)
+    is_leap = np.asarray(t.is_leap_year, dtype=bool)
+    days_in_year = np.where(is_leap, 366.0, 365.0)
+
+    sec = np.asarray(t.hour, dtype=float) * 3600.0
+    sec += np.asarray(t.minute, dtype=float) * 60.0
+    sec += np.asarray(t.second, dtype=float)
+    sec += np.asarray(t.microsecond, dtype=float) * 1e-6
+
+    frac = (day_of_year - 1.0 + sec / 86400.0) / days_in_year
+    year_frac = year + frac
+
+    return xr.DataArray(
+        year_frac,
+        dims=time_coord.dims,
+        coords=time_coord.coords,
+        name="year_fraction",
+    )
+
+
+def linear_trend(
+    data: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    time_dim: str = "time",
+) -> xr.Dataset:
+    """Fit per-pixel linear trend against fractional year time.
+
+    Parameters
+    ----------
+    data : xr.DataArray or xr.Dataset
+        Time-series input with a datetime-like ``time_dim``.
+    variable : str, optional
+        Variable name when ``data`` is a Dataset. If omitted and Dataset has
+        one variable, that variable is used.
+    time_dim : str
+        Name of time dimension. Default ``"time"``.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset with variables:
+        ``slope`` (units per year), ``intercept`` and ``p_value``.
+
+    Notes
+    -----
+    Computation is vectorized with xarray broadcasting across all non-time
+    dimensions. p-values are computed from a two-sided t-test on slope.
+    If SciPy is unavailable, a normal approximation is used.
+    """
+    if isinstance(data, xr.Dataset):
+        if variable is not None:
+            if variable not in data.data_vars:
+                raise ValueError(
+                    f"Variable {variable!r} not found in Dataset. "
+                    f"Available: {list(data.data_vars)}"
+                )
+            da = data[variable]
+        elif len(data.data_vars) == 1:
+            da = next(iter(data.data_vars.values()))
+        else:
+            raise ValueError(
+                "Dataset input requires variable=... when multiple variables exist. "
+                f"Available: {list(data.data_vars)}"
+            )
+    else:
+        da = data
+
+    if not isinstance(da, xr.DataArray):
+        raise TypeError(f"data must be xr.DataArray or xr.Dataset, got {type(data)}")
+
+    if time_dim not in da.dims:
+        raise ValueError(
+            f"Input data must contain time dimension {time_dim!r}. Found {da.dims}."
+        )
+
+    t = _time_to_year_fraction(da[time_dim])
+    y = da.astype(float)
+
+    # Broadcast time coordinate across spatial dims and mask invalid values.
+    t_b, y_b = xr.broadcast(t, y)
+    mask = xr.ufuncs.isfinite(y_b) & xr.ufuncs.isfinite(t_b)
+    n = mask.sum(dim=time_dim)
+
+    t_mask = xr.where(mask, t_b, np.nan)
+    y_mask = xr.where(mask, y_b, np.nan)
+
+    t_mean = t_mask.mean(dim=time_dim, skipna=True)
+    y_mean = y_mask.mean(dim=time_dim, skipna=True)
+
+    dt = t_mask - t_mean
+    dy = y_mask - y_mean
+    sxx = (dt * dt).sum(dim=time_dim, skipna=True)
+    sxy = (dt * dy).sum(dim=time_dim, skipna=True)
+
+    slope = sxy / sxx
+    intercept = y_mean - slope * t_mean
+
+    y_hat = intercept + slope * t_b
+    resid = xr.where(mask, y_b - y_hat, np.nan)
+    sse = (resid * resid).sum(dim=time_dim, skipna=True)
+
+    df = n - 2
+    stderr = xr.apply_ufunc(np.sqrt, (sse / df) / sxx)
+    t_stat = slope / stderr
+
+    base_valid = (n >= 3) & xr.ufuncs.isfinite(sxx) & (sxx > 0)
+
+    p_value = xr.full_like(slope, np.nan, dtype=float)
+
+    try:
+        from scipy.stats import t as student_t  # type: ignore
+
+        p_calc = xr.apply_ufunc(
+            lambda ts, d: 2.0 * student_t.sf(np.abs(ts), d),
+            t_stat,
+            df,
+            vectorize=True,
+            dask="parallelized",
+            output_dtypes=[float],
+        )
+    except Exception:
+        warnings.warn(
+            "SciPy not available: p-values computed using normal approximation.",
+            UserWarning,
+            stacklevel=2,
+        )
+        p_calc = xr.apply_ufunc(
+            lambda z: erfc(abs(float(z)) / np.sqrt(2.0)),
+            t_stat,
+            vectorize=True,
+            dask="parallelized",
+            output_dtypes=[float],
+        )
+
+    zero_stderr = base_valid & xr.ufuncs.isfinite(stderr) & (stderr == 0)
+    finite_stderr = base_valid & xr.ufuncs.isfinite(stderr) & (stderr > 0)
+
+    p_zero = xr.where(xr.ufuncs.fabs(slope) > 0, 0.0, 1.0)
+    p_value = xr.where(zero_stderr, p_zero, np.nan)
+    p_value = xr.where(finite_stderr, p_calc, p_value)
+
+    slope = xr.where(base_valid, slope, np.nan)
+    intercept = xr.where(base_valid, intercept, np.nan)
+
+    out = xr.Dataset(
+        {
+            "slope": slope,
+            "intercept": intercept,
+            "p_value": p_value,
+        }
+    )
+
+    base_units = da.attrs.get("units")
+    if base_units:
+        out["slope"].attrs["units"] = f"{base_units}/year"
+        out["intercept"].attrs["units"] = base_units
+    out["slope"].attrs["long_name"] = "Linear trend slope"
+    out["intercept"].attrs["long_name"] = "Linear trend intercept"
+    out["p_value"].attrs["long_name"] = "Two-sided p-value for slope"
+    out.attrs["time_basis"] = "fractional_year"
+    out.attrs["source_variable"] = da.name if da.name is not None else "unnamed"
+
+    return out
 
 
 def class_summary(

@@ -28,7 +28,13 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
-from .analysis import class_summary, last_occurrence, summarize_dynamics, summarize_wct
+from .analysis import (
+    class_summary,
+    last_occurrence,
+    linear_trend,
+    summarize_dynamics,
+    summarize_wct,
+)
 from .dynamics import (
     DYNAMICS_CLASSES,
     DYNAMICS_COLORS,
@@ -70,6 +76,7 @@ from .wct import (
 __all__ = [
     # Analysis utilities
     "last_occurrence",
+    "linear_trend",
     "class_summary",
     "summarize_dynamics",
     "summarize_wct",

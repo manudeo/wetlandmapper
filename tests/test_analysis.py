@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from wetlandmapper import class_summary, last_occurrence, summarize_dynamics, summarize_wct
+from wetlandmapper import (
+    class_summary,
+    last_occurrence,
+    linear_trend,
+    summarize_dynamics,
+    summarize_wct,
+)
 from wetlandmapper.dynamics import DYNAMICS_CLASSES
 from wetlandmapper.wct import WCT_CLASSES, WCT_LEVEL2_CLASSES
 
@@ -255,3 +261,101 @@ def test_summarize_wct_wrappers(multispectral_ds):
 
     assert set(summary_l1["class_code"].values.tolist()) == set(WCT_CLASSES.keys())
     assert set(summary_l2["class_code"].values.tolist()) == set(WCT_LEVEL2_CLASSES.keys())
+
+
+def test_linear_trend_dataarray_known_signal():
+    times = np.array(
+        [
+            np.datetime64("2000-01-01"),
+            np.datetime64("2001-01-01"),
+            np.datetime64("2002-01-01"),
+            np.datetime64("2003-01-01"),
+        ]
+    )
+    years = np.array([2000.0, 2001.0, 2002.0, 2003.0], dtype=float)
+
+    slope_true = np.array([[0.5, -0.25], [0.0, 1.0]], dtype=float)
+    intercept_true = np.array([[2.0, 3.0], [4.0, -1.0]], dtype=float)
+
+    values = np.empty((len(times), 2, 2), dtype=float)
+    for i, year in enumerate(years):
+        values[i] = slope_true * year + intercept_true
+
+    da = xr.DataArray(
+        values,
+        dims=["time", "y", "x"],
+        coords={"time": times, "y": [0, 1], "x": [0, 1]},
+        name="ndvi",
+        attrs={"units": "unitless"},
+    )
+
+    out = linear_trend(da)
+
+    np.testing.assert_allclose(out["slope"].values, slope_true, atol=1e-12, rtol=1e-12)
+    np.testing.assert_allclose(
+        out["intercept"].values, intercept_true, atol=1e-12, rtol=1e-12
+    )
+    assert float(out["p_value"].sel(y=0, x=0)) < 1e-6
+    assert float(out["p_value"].sel(y=0, x=1)) < 1e-6
+    assert float(out["p_value"].sel(y=1, x=1)) < 1e-6
+    assert float(out["p_value"].sel(y=1, x=0)) == 1.0
+    assert out["slope"].attrs["units"] == "unitless/year"
+    assert out.attrs["time_basis"] == "fractional_year"
+
+
+def test_linear_trend_handles_nan_and_insufficient_points():
+    times = np.array(
+        [
+            np.datetime64("2000-01-01"),
+            np.datetime64("2001-01-01"),
+            np.datetime64("2002-01-01"),
+            np.datetime64("2003-01-01"),
+        ]
+    )
+    values = np.array(
+        [
+            [[1.0, 2.0], [5.0, np.nan]],
+            [[2.0, np.nan], [5.0, np.nan]],
+            [[3.0, np.nan], [5.0, np.nan]],
+            [[4.0, np.nan], [5.0, 9.0]],
+        ],
+        dtype=float,
+    )
+    da = xr.DataArray(
+        values,
+        dims=["time", "y", "x"],
+        coords={"time": times, "y": [0, 1], "x": [0, 1]},
+        name="signal",
+    )
+
+    out = linear_trend(da)
+
+    assert np.isfinite(float(out["slope"].sel(y=0, x=0)))
+    assert np.isnan(float(out["slope"].sel(y=0, x=1)))
+    assert float(out["slope"].sel(y=1, x=0)) == 0.0
+    assert np.isnan(float(out["slope"].sel(y=1, x=1)))
+
+
+def test_linear_trend_dataset_variable_selection_and_errors():
+    times = np.array(
+        [
+            np.datetime64("2000-01-01"),
+            np.datetime64("2001-01-01"),
+            np.datetime64("2002-01-01"),
+        ]
+    )
+    base = xr.DataArray(
+        np.array([[1.0], [2.0], [3.0]], dtype=float),
+        dims=["time", "x"],
+        coords={"time": times, "x": [0]},
+    )
+    ds = xr.Dataset({"a": base, "b": base * 2.0})
+
+    with pytest.raises(ValueError, match="requires variable"):
+        linear_trend(ds)
+
+    out = linear_trend(ds, variable="a")
+    assert "slope" in out.data_vars
+
+    with pytest.raises(ValueError, match="not found"):
+        linear_trend(ds, variable="missing")
