@@ -25,6 +25,12 @@ based on methods developed in Singh and Tooth (in prep.).
 
 Both methods work on any multispectral archive (Landsat 4–9, Sentinel-2, MODIS, etc.) and require **no labelled training data**. Data can be supplied by the user or fetched directly from **Google Earth Engine** using any Landsat mission, Sentinel-2, or MODIS.
 
+## Capability Guides
+
+Detailed capability notes are organized under [capabilities/README.md](capabilities/README.md) so the home README can stay focused.
+
+Use these focused guides for analysis utilities, workflows, acquisition pathways, terrain tools, and classification options.
+
 ## Water Indices
 
 WetlandMapper supports multiple water detection indices for optimal performance across different environments:

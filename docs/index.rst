@@ -19,6 +19,7 @@ Core capabilities include:
 
    installation
    workflows
+  capabilities
    api
 
 References

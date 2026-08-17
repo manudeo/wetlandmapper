@@ -17,6 +17,21 @@ summarize_dynamics
     Convenience wrapper around :func:`class_summary` for dynamics outputs.
 summarize_wct
     Convenience wrapper around :func:`class_summary` for WCT outputs.
+trend_products
+    Convenience wrapper around :func:`linear_trend` with significance masking,
+    trend classes, and optional raster export.
+class_area_timeseries
+    Compute per-time class counts, percentages, and optional area metrics.
+class_transition_matrix
+    Compute class-to-class transition matrix between two timestamps.
+detect_wet_events
+    Detect first/last wet occurrence and persistence streak metrics.
+summarize_by_polygons
+    Compute polygon-level summary statistics for raster stacks.
+quality_uncertainty_summary
+    Compute pixelwise QA metrics such as valid support and wet fraction.
+build_run_manifest
+    Create and optionally persist a reproducibility manifest in JSON.
 """
 
 from __future__ import annotations
@@ -646,9 +661,46 @@ def trend_products(
     output_geotiff_dir: str | Path | None = None,
     geotiff_prefix: str = "trend",
 ) -> xr.Dataset:
-    """Compute trend layers with significance masking and trend classes.
+    """Create a trend product bundle from a time-series variable.
 
-    Trend class encoding:
+    This function wraps :func:`linear_trend` and adds practical map products
+    used in reporting workflows:
+
+    - ``is_significant``: significance mask from p-value threshold
+    - ``slope_significant``: slope retained only where significant
+    - ``trend_class``: directional class map (-1, 0, 1)
+
+    Parameters
+    ----------
+    data : xr.DataArray or xr.Dataset
+        Input time-series data.
+    variable : str, optional
+        Variable to analyze when ``data`` is a Dataset.
+    time_dim : str
+        Name of the temporal dimension.
+    alpha : float
+        Two-sided significance threshold for slope p-values.
+    stable_epsilon : float
+        Deadband around zero slope for assigning the stable class.
+        Slopes in ``[-stable_epsilon, stable_epsilon]`` are mapped to class 0.
+    output_netcdf : str or pathlib.Path, optional
+        If provided, writes all output layers to a NetCDF file.
+    output_geotiff_dir : str or pathlib.Path, optional
+        If provided, writes each output variable as a separate GeoTIFF.
+        Requires ``rioxarray`` and spatial metadata on the input.
+    geotiff_prefix : str
+        Prefix used for GeoTIFF filenames when ``output_geotiff_dir`` is set.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset containing ``slope``, ``intercept``, ``p_value``,
+        ``is_significant``, ``slope_significant``, and ``trend_class``.
+
+    Notes
+    -----
+    ``trend_class`` encoding:
+
     - ``-1`` decreasing
     - ``0`` stable
     - ``1`` increasing
@@ -722,7 +774,33 @@ def class_area_timeseries(
     area_unit: str = "km2",
     include_all_labels: bool = True,
 ) -> xr.Dataset:
-    """Compute class counts/percent/area through time."""
+    """Summarize class composition for each time step.
+
+    Parameters
+    ----------
+    classes : xr.DataArray or xr.Dataset
+        Class-coded raster stack with ``time_dim`` and spatial dimensions.
+    variable : str, optional
+        Variable to use when ``classes`` is a Dataset.
+    time_dim : str
+        Name of the temporal dimension.
+    class_labels : dict[int, str], optional
+        Mapping from class code to class label for named outputs.
+    pixel_area : float, optional
+        Pixel area in square meters. If provided, area columns are added.
+    area_unit : {"m2", "km2", "ha"}
+        Unit for output area values.
+    include_all_labels : bool
+        If True and ``class_labels`` is provided, include all listed classes
+        even when absent at a given timestep.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset indexed by ``time_dim`` and ``class_code`` with
+        ``pixel_count``, ``percent_of_valid``, ``total_valid_pixels`` and
+        optional ``area_<unit>`` plus ``class_name``.
+    """
     da = _extract_class_dataarray(classes, variable=variable)
     if time_dim not in da.dims:
         raise ValueError(
@@ -796,7 +874,36 @@ def class_transition_matrix(
     area_unit: str = "km2",
     include_all_labels: bool = True,
 ) -> xr.Dataset:
-    """Compute class transition matrix between two timesteps."""
+    """Compute class transitions between two timestamps.
+
+    Parameters
+    ----------
+    classes : xr.DataArray or xr.Dataset
+        Class-coded raster stack with ``time_dim``.
+    start_time : object
+        Start timestamp selector value used with ``xarray.DataArray.sel``.
+    end_time : object
+        End timestamp selector value used with ``xarray.DataArray.sel``.
+    variable : str, optional
+        Variable to use when ``classes`` is a Dataset.
+    time_dim : str
+        Name of the temporal dimension.
+    class_labels : dict[int, str], optional
+        Mapping from class code to class label.
+    pixel_area : float, optional
+        Pixel area in square meters to derive area transition matrix.
+    area_unit : {"m2", "km2", "ha"}
+        Unit for output area values.
+    include_all_labels : bool
+        If True and ``class_labels`` is provided, includes all listed classes
+        in both from/to axes.
+
+    Returns
+    -------
+    xr.Dataset
+        Transition matrix with dimensions ``from_class`` and ``to_class`` and
+        variables ``pixel_count`` and ``percent_of_valid`` plus optional area.
+    """
     da = _extract_class_dataarray(classes, variable=variable)
     if time_dim not in da.dims:
         raise ValueError(
@@ -874,7 +981,31 @@ def detect_wet_events(
     threshold: float = 0.0,
     time_dim: str = "time",
 ) -> xr.Dataset:
-    """Detect wet-event timing and persistence metrics from time series."""
+    """Derive wet-event timing and persistence indicators per pixel.
+
+    Parameters
+    ----------
+    data : xr.DataArray or xr.Dataset
+        Time-series variable to evaluate against ``threshold``.
+    variable : str, optional
+        Variable to use when ``data`` is a Dataset.
+    threshold : float
+        Wetness threshold. Values greater than or equal to this threshold are
+        treated as wet observations.
+    time_dim : str
+        Name of the temporal dimension.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset with:
+        ``first_on_year``, ``last_on_year``, ``on_count``, ``on_fraction``,
+        and ``longest_on_streak``.
+
+    Notes
+    -----
+    ``first_on_year`` and ``last_on_year`` are expressed in fractional years.
+    """
     if isinstance(data, xr.Dataset):
         if variable is None:
             if len(data.data_vars) == 1:
@@ -954,13 +1085,36 @@ def summarize_by_polygons(
     polygon_id_col: str | None = None,
     stats: tuple[str, ...] = ("mean", "median", "std", "count"),
 ):
-    """Summarize raster values over polygon features.
+    """Compute zonal summary statistics by polygon feature.
+
+    Parameters
+    ----------
+    data : xr.DataArray or xr.Dataset
+        Spatial raster or raster stack with ``x`` and ``y`` coordinates.
+    polygons : path-like or GeoDataFrame
+        Polygon source used to define zones.
+    variable : str, optional
+        Variable to use when ``data`` is a Dataset.
+    time_dim : str
+        Temporal dimension name. If present, results are returned per polygon
+        and per time step.
+    polygon_id_col : str, optional
+        Column in the GeoDataFrame used as stable polygon identifier.
+        If omitted, the row index is used.
+    stats : tuple[str, ...]
+        Statistics to compute. Supported values are ``mean``, ``median``,
+        ``std``, and ``count``.
 
     Returns
     -------
     pandas.DataFrame
         Rows represent polygon/time combinations (or polygon only when there
         is no time dimension).
+
+    Raises
+    ------
+    ImportError
+        If ``geopandas`` or ``shapely>=2`` is not available.
     """
     try:
         import geopandas as gpd
@@ -1069,7 +1223,29 @@ def quality_uncertainty_summary(
     wet_threshold: float = 0.0,
     low_support_threshold: float = 0.5,
 ) -> xr.Dataset:
-    """Compute quality/uncertainty diagnostics for time-series stacks."""
+    """Compute support and uncertainty diagnostics for time-series pixels.
+
+    Parameters
+    ----------
+    data : xr.DataArray or xr.Dataset
+        Time-series data array to evaluate.
+    variable : str, optional
+        Variable to use when ``data`` is a Dataset.
+    time_dim : str
+        Name of the temporal dimension.
+    wet_threshold : float
+        Threshold used to compute ``wet_fraction``.
+    low_support_threshold : float
+        Valid-support threshold in ``[0, 1]`` used for the ``low_support`` flag.
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset containing ``n_total``, ``n_valid``, ``valid_fraction``,
+        ``missing_fraction``, ``wet_fraction``, and ``low_support``.
+        If a time-aligned ``sensor`` coordinate exists, also returns
+        ``sensor_dominant_fraction`` and ``sensor_count``.
+    """
     if isinstance(data, xr.Dataset):
         if variable is None:
             if len(data.data_vars) == 1:
@@ -1160,7 +1336,25 @@ def build_run_manifest(
     output_path: str | Path | None = None,
     extras: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Build and optionally save a reproducibility manifest."""
+    """Build and optionally write a reproducibility manifest.
+
+    Parameters
+    ----------
+    parameters : dict, optional
+        Runtime parameters and thresholds used in the workflow.
+    input_paths : list[str or pathlib.Path], optional
+        Input files to hash with SHA-256 for provenance tracking.
+    output_path : str or pathlib.Path, optional
+        If provided, writes the manifest as JSON to this location.
+    extras : dict, optional
+        Additional structured metadata to store in the manifest.
+
+    Returns
+    -------
+    dict[str, object]
+        Manifest dictionary containing timestamp, software versions, platform,
+        parameter payload, and input file hashes.
+    """
     from importlib.metadata import PackageNotFoundError, version
 
     try:
