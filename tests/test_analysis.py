@@ -1,5 +1,8 @@
 """Test suite for analysis.last_occurrence function."""
 
+import builtins
+from pathlib import Path
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -514,3 +517,280 @@ def test_summarize_by_polygons_mean_count():
     assert int(df.loc[0, "polygon_id"]) == 7
     assert float(df.loc[0, "mean"]) == 2.5
     assert int(df.loc[0, "count"]) == 4
+
+
+def test_last_occurrence_validation_branches():
+    with pytest.raises(TypeError, match="xr.DataArray or xr.Dataset"):
+        last_occurrence(123, "MNDWI")
+
+    da = xr.DataArray(np.ones((2, 2)), dims=["y", "x"], name="MNDWI")
+    with pytest.raises(ValueError, match="time"):
+        last_occurrence(da, "MNDWI")
+
+    da_t = xr.DataArray(
+        np.ones((2, 2, 2)),
+        dims=["time", "y", "x"],
+        coords={"time": [np.datetime64("2020-01-01"), np.datetime64("2021-01-01")]},
+        name="MNDWI",
+    )
+    with pytest.raises(TypeError, match="str or list"):
+        last_occurrence(da_t, 7)
+    with pytest.raises(ValueError, match="multiple indices"):
+        last_occurrence(da_t, ["MNDWI", "NDVI"])
+
+
+def test_class_summary_error_paths():
+    arr_nan = xr.DataArray(np.full((2, 2), np.nan), dims=["y", "x"])
+    with pytest.raises(ValueError, match="No finite class values"):
+        class_summary(arr_nan)
+
+    arr = xr.DataArray(np.array([[0, 1], [1, 2]], dtype=float), dims=["y", "x"])
+    with pytest.raises(ValueError, match="pixel_area"):
+        class_summary(arr, pixel_area=0)
+    with pytest.raises(ValueError, match="Unsupported area_unit"):
+        class_summary(arr, pixel_area=1, area_unit="acre")
+
+
+def test_trend_products_validation_and_netcdf_branch(tmp_path, monkeypatch):
+    times = np.array(
+        [
+            np.datetime64("2000-01-01"),
+            np.datetime64("2001-01-01"),
+            np.datetime64("2002-01-01"),
+        ]
+    )
+    da = xr.DataArray(
+        np.array([[[1.0]], [[2.0]], [[3.0]]]),
+        dims=["time", "y", "x"],
+        coords={"time": times, "y": [0], "x": [0]},
+    )
+
+    with pytest.raises(ValueError, match="alpha"):
+        trend_products(da, alpha=1.0)
+    with pytest.raises(ValueError, match="stable_epsilon"):
+        trend_products(da, stable_epsilon=-1)
+
+    called = {"ok": False}
+
+    def _fake_to_netcdf(self, path):  # noqa: ANN001
+        called["ok"] = True
+        Path(path).write_text("fake", encoding="utf-8")
+
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", _fake_to_netcdf)
+    out_nc = tmp_path / "trend_out.nc"
+    out = trend_products(da, output_netcdf=out_nc)
+    assert called["ok"] is True
+    assert out_nc.exists()
+    assert out.attrs["output_netcdf"].endswith("trend_out.nc")
+
+
+def test_class_area_timeseries_error_paths():
+    arr = xr.DataArray(np.array([[1.0, 2.0]]), dims=["y", "x"])
+    with pytest.raises(ValueError, match="time dimension"):
+        class_area_timeseries(arr)
+
+    ts_nan = xr.DataArray(
+        np.full((2, 1, 1), np.nan),
+        dims=["time", "y", "x"],
+        coords={"time": [0, 1], "y": [0], "x": [0]},
+    )
+    with pytest.raises(ValueError, match="No finite class values"):
+        class_area_timeseries(ts_nan)
+
+    ts = xr.DataArray(
+        np.array([[[0]], [[1]]], dtype=float),
+        dims=["time", "y", "x"],
+        coords={"time": [0, 1], "y": [0], "x": [0]},
+    )
+    with pytest.raises(ValueError, match="pixel_area"):
+        class_area_timeseries(ts, pixel_area=-1)
+
+
+def test_class_transition_matrix_branches():
+    ts = xr.DataArray(
+        np.array(
+            [
+                [[0, 1]],
+                [[1, 2]],
+            ],
+            dtype=float,
+        ),
+        dims=["time", "y", "x"],
+        coords={"time": [0, 1], "y": [0], "x": [0, 1]},
+        name="dynamics",
+    )
+
+    out = class_transition_matrix(
+        ts,
+        start_time=0,
+        end_time=1,
+        class_labels={0: "A", 1: "B", 2: "C"},
+        pixel_area=100,
+        area_unit="m2",
+    )
+    assert "from_name" in out
+    assert "to_name" in out
+    assert "area_m2" in out
+
+    ts_notime = xr.DataArray(np.array([[0, 1]], dtype=float), dims=["y", "x"])
+    with pytest.raises(ValueError, match="time dimension"):
+        class_transition_matrix(ts_notime, start_time=0, end_time=1)
+
+    ts_nan = xr.DataArray(
+        np.full((2, 1, 1), np.nan),
+        dims=["time", "y", "x"],
+        coords={"time": [0, 1], "y": [0], "x": [0]},
+    )
+    with pytest.raises(ValueError, match="No overlapping finite"):
+        class_transition_matrix(ts_nan, start_time=0, end_time=1)
+
+
+def test_detect_wet_events_dataset_validation():
+    times = [np.datetime64("2020-01-01"), np.datetime64("2021-01-01")]
+    ds = xr.Dataset(
+        {
+            "a": xr.DataArray(np.array([[[1.0]], [[2.0]]]), dims=["time", "y", "x"]),
+            "b": xr.DataArray(np.array([[[1.0]], [[2.0]]]), dims=["time", "y", "x"]),
+        },
+        coords={"time": times, "y": [0], "x": [0]},
+    )
+
+    with pytest.raises(ValueError, match="requires variable"):
+        detect_wet_events(ds)
+    with pytest.raises(ValueError, match="not found"):
+        detect_wet_events(ds, variable="missing")
+
+    arr = xr.DataArray(np.array([[1.0]]), dims=["y", "x"])
+    with pytest.raises(ValueError, match="time dimension"):
+        detect_wet_events(arr)
+
+
+def test_summarize_by_polygons_validation_branches(tmp_path):
+    da = xr.DataArray(
+        np.array([[[1.0]]]),
+        dims=["time", "y", "x"],
+        coords={"time": [np.datetime64("2020-01-01")], "y": [0.0], "x": [0.0]},
+    )
+
+    with pytest.raises(TypeError, match="path-like or GeoDataFrame"):
+        summarize_by_polygons(da, polygons=123)
+
+    arr_no_spatial = xr.DataArray(np.array([[1.0, 2.0]]), dims=["time", "z"])
+    gpd = pytest.importorskip("geopandas")
+    shapely = pytest.importorskip("shapely")
+    box = shapely.box
+    gdf = gpd.GeoDataFrame({"geometry": [box(-1, -1, 1, 1)]})
+
+    with pytest.raises(ValueError, match="spatial dimensions"):
+        summarize_by_polygons(arr_no_spatial, gdf)
+
+    gdf_empty = gpd.GeoDataFrame({"geometry": []})
+    with pytest.raises(ValueError, match="No polygons"):
+        summarize_by_polygons(da, gdf_empty)
+
+    gdf_ok = gpd.GeoDataFrame({"geometry": [box(-1, -1, 1, 1)]})
+    with pytest.raises(ValueError, match="Unsupported stat"):
+        summarize_by_polygons(da, gdf_ok, stats=("mean", "bogus"))
+
+
+def test_quality_uncertainty_summary_validation_branches():
+    arr = xr.DataArray(np.array([[1.0]]), dims=["y", "x"])
+    with pytest.raises(ValueError, match="time dimension"):
+        quality_uncertainty_summary(arr)
+
+    times = [np.datetime64("2020-01-01"), np.datetime64("2021-01-01")]
+    ds = xr.Dataset(
+        {
+            "a": xr.DataArray(np.array([[[1.0]], [[2.0]]]), dims=["time", "y", "x"]),
+            "b": xr.DataArray(np.array([[[1.0]], [[2.0]]]), dims=["time", "y", "x"]),
+        },
+        coords={"time": times, "y": [0], "x": [0]},
+    )
+    with pytest.raises(ValueError, match="requires variable"):
+        quality_uncertainty_summary(ds)
+    with pytest.raises(ValueError, match="not found"):
+        quality_uncertainty_summary(ds, variable="missing")
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        quality_uncertainty_summary(ds, variable="a", low_support_threshold=2)
+
+
+def test_build_run_manifest_file_not_found():
+    with pytest.raises(FileNotFoundError, match="Input path not found"):
+        build_run_manifest(input_paths=["definitely_missing_file_123.txt"])
+
+
+def test_trend_products_geotiff_missing_rioxarray(tmp_path, monkeypatch):
+    da = xr.DataArray(
+        np.array([[[1.0]], [[2.0]], [[3.0]]]),
+        dims=["time", "y", "x"],
+        coords={
+            "time": [
+                np.datetime64("2000-01-01"),
+                np.datetime64("2001-01-01"),
+                np.datetime64("2002-01-01"),
+            ],
+            "y": [0],
+            "x": [0],
+        },
+    )
+
+    orig_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):  # noqa: ANN001
+        if name == "rioxarray":
+            raise ImportError("missing")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    with pytest.raises(ImportError, match="GeoTIFF export requires rioxarray"):
+        trend_products(da, output_geotiff_dir=tmp_path / "tifs")
+
+
+def test_summarize_by_polygons_missing_geopandas(monkeypatch):
+    da = xr.DataArray(
+        np.array([[[1.0]]]),
+        dims=["time", "y", "x"],
+        coords={"time": [np.datetime64("2020-01-01")], "y": [0.0], "x": [0.0]},
+    )
+    orig_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):  # noqa: ANN001
+        if name == "geopandas":
+            raise ImportError("missing")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    with pytest.raises(ImportError, match="requires geopandas"):
+        summarize_by_polygons(da, polygons="dummy.geojson")
+
+
+def test_summarize_by_polygons_missing_shapely(monkeypatch):
+    gpd = pytest.importorskip("geopandas")
+    da = xr.DataArray(
+        np.array([[[1.0]]]),
+        dims=["time", "y", "x"],
+        coords={"time": [np.datetime64("2020-01-01")], "y": [0.0], "x": [0.0]},
+    )
+    gdf = gpd.GeoDataFrame({"geometry": []})
+
+    orig_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):  # noqa: ANN001
+        if name == "shapely":
+            raise ImportError("missing")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    with pytest.raises(ImportError, match="requires shapely"):
+        summarize_by_polygons(da, polygons=gdf)
+
+
+def test_build_run_manifest_package_version_fallback(monkeypatch):
+    import importlib.metadata as im
+
+    def _raise_pkg_not_found(name):  # noqa: ANN001
+        raise im.PackageNotFoundError
+
+    monkeypatch.setattr(im, "version", _raise_pkg_not_found)
+    manifest = build_run_manifest(parameters={"k": 1})
+    assert manifest["wetlandmapper_version"] == "unknown"
