@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.9 or later
+- Python 3.10 or later
 - A C compiler and GDAL system libraries (required by `rasterio`; see platform notes below)
 
 ## Quick install (recommended: conda)
