@@ -47,34 +47,75 @@ def test_wettest_selection_returns_nan_when_no_valid_month_exists():
 
 
 def test_hydroperiod_valid_policy_is_invariant_to_cloud_fraction():
-    wet_months = np.array([2.0, 6.0])
-    valid_months = np.array([2.0, 6.0])
+    wet_months = np.array([1.0, 2.0])
+    observed_months = np.array([1.0, 2.0])
+    climate_valid_months = np.array([2.0, 2.0])
 
     equiv = gee._hydroperiod_equivalent_months_numpy(
         wet_months,
-        valid_months,
+        observed_months,
+        climate_valid_months,
         hydroperiod_nan_policy="valid",
     )
 
-    assert float(equiv[0]) == pytest.approx(12.0)
-    assert float(equiv[1]) == pytest.approx(12.0)
+    assert float(equiv[0]) == pytest.approx(2.0)
+    assert float(equiv[1]) == pytest.approx(2.0)
     assert bool(equiv[0] >= 2.0)
     assert bool(equiv[1] >= 2.0)
 
 
 def test_hydroperiod_total_policy_is_cloud_fraction_sensitive():
-    wet_months = np.array([2.0, 6.0])
-    valid_months = np.array([2.0, 6.0])
+    wet_months = np.array([1.0, 2.0])
+    observed_months = np.array([1.0, 2.0])
+    climate_valid_months = np.array([2.0, 2.0])
 
     equiv = gee._hydroperiod_equivalent_months_numpy(
         wet_months,
-        valid_months,
+        observed_months,
+        climate_valid_months,
         hydroperiod_nan_policy="total",
     )
 
-    assert float(equiv[0]) == pytest.approx(2.0)
-    assert float(equiv[1]) == pytest.approx(6.0)
+    assert float(equiv[0]) == pytest.approx(1.0)
+    assert float(equiv[1]) == pytest.approx(2.0)
     assert bool(equiv[0] <= equiv[1])
+
+
+def test_hydroperiod_scales_to_climate_valid_season_not_calendar_year():
+    wet_months = np.array([1.0, 1.0])
+    observed_months = np.array([1.0, 1.0])
+    climate_valid_months = np.array([3.0, 6.0])
+
+    equiv = gee._hydroperiod_equivalent_months_numpy(
+        wet_months,
+        observed_months,
+        climate_valid_months,
+        hydroperiod_nan_policy="valid",
+    )
+
+    assert float(equiv[0]) == pytest.approx(3.0)
+    assert float(equiv[1]) == pytest.approx(6.0)
+
+
+def test_valid_and_total_agree_when_no_cloud_loss():
+    wet_months = np.array([1.0, 2.0, 4.0])
+    observed_months = np.array([3.0, 5.0, 6.0])
+    climate_valid_months = observed_months.copy()
+
+    equiv_valid = gee._hydroperiod_equivalent_months_numpy(
+        wet_months,
+        observed_months,
+        climate_valid_months,
+        hydroperiod_nan_policy="valid",
+    )
+    equiv_total = gee._hydroperiod_equivalent_months_numpy(
+        wet_months,
+        observed_months,
+        climate_valid_months,
+        hydroperiod_nan_policy="total",
+    )
+
+    assert np.allclose(equiv_valid, equiv_total)
 
 
 def test_mean_hydroperiod_excludes_years_with_zero_valid_months():

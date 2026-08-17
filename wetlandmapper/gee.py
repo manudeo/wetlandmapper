@@ -706,27 +706,29 @@ def _format_year_month_key(year: int, month: int) -> str:
 
 def _hydroperiod_equivalent_months_numpy(
     wet_months: np.ndarray,
-    valid_months: np.ndarray,
+    observed_months: np.ndarray,
+    climate_valid_months: np.ndarray,
     hydroperiod_nan_policy: str = "valid",
-    months_per_year: int = 12,
 ) -> np.ndarray:
     """Offline mirror of hydroperiod equivalent-month conversion."""
     policy = _normalize_hydroperiod_nan_policy(hydroperiod_nan_policy)
     wet = np.asarray(wet_months, dtype=float)
-    valid = np.asarray(valid_months, dtype=float)
-    if wet.shape != valid.shape:
-        raise ValueError("wet_months and valid_months must have identical shapes.")
-    if months_per_year <= 0:
-        raise ValueError("months_per_year must be > 0.")
+    observed = np.asarray(observed_months, dtype=float)
+    climate_valid = np.asarray(climate_valid_months, dtype=float)
+    if wet.shape != observed.shape or wet.shape != climate_valid.shape:
+        raise ValueError(
+            "wet_months, observed_months, and climate_valid_months must have "
+            "identical shapes."
+        )
 
     if policy == "total":
         return wet
 
     return np.divide(
-        wet * float(months_per_year),
-        valid,
+        wet * climate_valid,
+        observed,
         out=np.full(wet.shape, np.nan, dtype=float),
-        where=valid > 0,
+        where=observed > 0,
     )
 
 
@@ -2192,8 +2194,18 @@ def _build_climate_adaptive_composites(
     years = ee.List.sequence(start_yr, end_yr)
 
     def _hydroperiod_equivalent_in_year(yr):
-        yr_col  = climate_valid.filter(ee.Filter.eq("year", yr))
-        valid_col = yr_col.map(
+        yr_raw = joined_col.filter(ee.Filter.eq("year", yr))
+        climate_ok_col = yr_raw.map(
+            lambda img: img.select("precip_mm")
+            .gte(min_precip_mm)
+            .And(img.select("temp_c").gte(min_temp_c))
+            .rename("climate_ok")
+            .unmask(0)
+        )
+        climate_valid_months = climate_ok_col.sum().rename("climate_valid_months")
+
+        yr_col = climate_valid.filter(ee.Filter.eq("year", yr))
+        observed_col = yr_col.map(
             lambda img: img.select(wetness_index).mask().rename("valid").unmask(0)
         )
         wet_col = yr_col.map(
@@ -2203,13 +2215,15 @@ def _build_climate_adaptive_composites(
             .unmask(0)
         )
 
-        valid_months = valid_col.sum().rename("valid_months")
+        observed_months = observed_col.sum().rename("observed_months")
         wet_months = wet_col.sum().rename("wet_months")
 
         if hydroperiod_nan_policy == "valid":
-            wet_equiv = wet_months.divide(valid_months.max(1)).multiply(12.0)
+            wet_equiv = (
+                wet_months.divide(observed_months.max(1)).multiply(climate_valid_months)
+            )
             wet_equiv = wet_equiv.rename("wet_equiv_months").updateMask(
-                valid_months.gte(1)
+                observed_months.gte(1)
             )
         else:
             wet_equiv = wet_months.rename("wet_equiv_months")

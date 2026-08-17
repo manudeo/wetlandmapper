@@ -4,8 +4,8 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from wetlandmapper.indices import compute_aweish, compute_aweinsh
 from wetlandmapper import gee
+from wetlandmapper.indices import compute_aweinsh, compute_aweish
 
 
 def test_fetch_xee_exposes_fetch_parameters_plus_chunks():
@@ -69,25 +69,27 @@ def test_gee_valid_indices_match_indices_module_support():
 def test_hydroperiod_equivalent_months_valid_policy_ignores_masked_months():
     """Wet in all valid months should remain fully wet despite many masked months."""
     wet = np.array([5.0])
-    valid = np.array([5.0])
+    observed = np.array([5.0])
+    climate_valid = np.array([5.0])
     equiv = gee._hydroperiod_equivalent_months_numpy(
         wet,
-        valid,
+        observed,
+        climate_valid,
         hydroperiod_nan_policy="valid",
-        months_per_year=12,
     )
-    assert float(equiv[0]) == pytest.approx(12.0)
+    assert float(equiv[0]) == pytest.approx(5.0)
 
 
 def test_hydroperiod_equivalent_months_total_policy_counts_masked_as_dry():
     """Total policy should preserve raw wet-month counts."""
     wet = np.array([5.0])
-    valid = np.array([5.0])
+    observed = np.array([5.0])
+    climate_valid = np.array([5.0])
     equiv = gee._hydroperiod_equivalent_months_numpy(
         wet,
-        valid,
+        observed,
+        climate_valid,
         hydroperiod_nan_policy="total",
-        months_per_year=12,
     )
     assert float(equiv[0]) == pytest.approx(5.0)
 
