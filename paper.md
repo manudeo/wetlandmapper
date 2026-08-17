@@ -42,7 +42,10 @@ cover types including open clear water, turbid water, aquatic vegetation, and mo
 The package now includes comprehensive **spectral index computation** supporting six
 indices (MNDWI, NDWI, NDVI, NDTI, AWEIsh, AWEInsh) for flexible water detection and
 vegetation analysis, a **terrain analysis module** for topographic corrections and
-artifact masking, and **visualisation utilities** for interactive plotting of results.
+artifact masking, a set of **analysis and reporting utilities** for trend estimation,
+class-area accounting, transition matrices, wet-event timing, polygon summaries,
+quality diagnostics, and provenance manifests, and **visualisation utilities** for
+interactive plotting of results.
 
 These modules address complementary monitoring questions: the dynamics module
 characterises *when and how* wetland inundation is changing over time, the WCT
@@ -100,8 +103,9 @@ analysis across diverse landscapes.
 The methods unified in `WetlandMapper` occupy a practical middle ground — no training labels,
 applicable to any cloud-free multispectral archive, and producing ecologically
 interpretable outputs — while providing comprehensive spectral index computation,
-terrain analysis for topographic corrections, and visualisation utilities. `WetlandMapper`
-makes these capabilities accessible in a reusable, tested Python library for the first time.
+terrain analysis for topographic corrections, post-classification reporting,
+and visualisation utilities. `WetlandMapper` makes these capabilities accessible in a
+reusable, tested Python library for the first time.
 
 # Software Design and Methods
 
@@ -214,9 +218,32 @@ users may request one median composite per year, month, or meteorological season
 aggregation functionality is also available client-side via `aggregate_time()`, which
 operates on any `xarray` `DataArray` or `Dataset` regardless of data source.
 
+## Analysis and Reporting Utilities
+
+WetlandMapper includes a set of post-classification analysis utilities that support
+reporting and reproducibility workflows:
+
+- **Trend estimation**: `linear_trend()` and `trend_products()` estimate per-pixel
+  slopes against fractional-year time, return p-values, and classify significant
+  increasing, stable, and decreasing trends.
+- **Class accounting**: `class_summary()`, `class_area_timeseries()`, and
+  `class_transition_matrix()` compute class counts, areas, and transitions for single
+  maps or multi-temporal class stacks.
+- **Wet-event timing**: `detect_wet_events()` derives first-wet and last-wet timing,
+  wet counts, wet fractions, and longest wet streaks.
+- **Regional summaries**: `summarize_by_polygons()` computes zonal statistics over
+  user-supplied polygon features.
+- **Quality diagnostics**: `quality_uncertainty_summary()` reports valid-data support,
+  missingness, wet fraction, and sensor-consistency indicators when available.
+- **Provenance**: `build_run_manifest()` records parameters, input hashes, versions,
+  and platform metadata in a portable JSON manifest.
+
+These functions are designed to keep common post-processing tasks in the same
+vectorized xarray workflow as the core classifiers.
+
 ## Dependencies and Installation
 
-`WetlandMapper` requires Python ≥ 3.9. Core dependencies are `numpy`
+`WetlandMapper` requires Python ≥ 3.10. Core dependencies are `numpy`
 [@harris2020array], `xarray` [@hoyer2017xarray], and `rioxarray` [@snow2022rioxarray].
 The GEE submodule additionally requires `earthengine-api`, `rasterio`, `xee`, `dask`,
 and `geopandas`. The plotting submodule requires `matplotlib` [@hunter2007matplotlib].
