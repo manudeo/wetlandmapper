@@ -21,8 +21,13 @@ summarize_wct
 
 from __future__ import annotations
 
+import json
+import platform
 import warnings
+from datetime import datetime, timezone
+from hashlib import sha256
 from math import erfc
+from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -629,3 +634,561 @@ def last_occurrence(
         value_result = xr.Dataset(value_vars, coords=coords)
 
     return year_result, value_result
+
+
+def trend_products(
+    data: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    time_dim: str = "time",
+    alpha: float = 0.05,
+    stable_epsilon: float = 0.0,
+    output_netcdf: str | Path | None = None,
+    output_geotiff_dir: str | Path | None = None,
+    geotiff_prefix: str = "trend",
+) -> xr.Dataset:
+    """Compute trend layers with significance masking and trend classes.
+
+    Trend class encoding:
+    - ``-1`` decreasing
+    - ``0`` stable
+    - ``1`` increasing
+    """
+    if not (0.0 < alpha < 1.0):
+        raise ValueError("alpha must be in (0, 1).")
+    if stable_epsilon < 0:
+        raise ValueError("stable_epsilon must be >= 0.")
+
+    trend = linear_trend(data=data, variable=variable, time_dim=time_dim)
+
+    sig = trend["p_value"] <= alpha
+    slope_sig = xr.where(sig, trend["slope"], np.nan)
+    trend_class = xr.where(
+        slope_sig > stable_epsilon,
+        1,
+        xr.where(slope_sig < -stable_epsilon, -1, 0),
+    ).astype(np.int8)
+
+    trend["is_significant"] = sig.astype(np.int8)
+    trend["slope_significant"] = slope_sig
+    trend["trend_class"] = trend_class
+
+    trend["trend_class"].attrs["class_encoding"] = (
+        "-1:decreasing,0:stable,1:increasing"
+    )
+    trend.attrs["alpha"] = alpha
+    trend.attrs["stable_epsilon"] = stable_epsilon
+
+    if output_netcdf is not None:
+        nc_path = Path(output_netcdf)
+        nc_path.parent.mkdir(parents=True, exist_ok=True)
+        trend.to_netcdf(nc_path)
+        trend.attrs["output_netcdf"] = str(nc_path)
+
+    if output_geotiff_dir is not None:
+        out_dir = Path(output_geotiff_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            import rioxarray  # noqa: F401
+        except Exception as exc:  # pragma: no cover - optional dependency
+            raise ImportError(
+                "GeoTIFF export requires rioxarray and spatial metadata on input."
+            ) from exc
+
+        for name in trend.data_vars:
+            trend[name].rio.to_raster(out_dir / f"{geotiff_prefix}_{name}.tif")
+
+        trend.attrs["output_geotiff_dir"] = str(out_dir)
+
+    return trend
+
+
+def _resolve_class_codes(
+    observed_codes: np.ndarray,
+    class_labels: dict[int, str] | None,
+    include_all_labels: bool,
+) -> list[int]:
+    observed = sorted(int(v) for v in observed_codes.tolist())
+    if class_labels is not None and include_all_labels:
+        return sorted(int(k) for k in class_labels.keys())
+    return observed
+
+
+def class_area_timeseries(
+    classes: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    time_dim: str = "time",
+    class_labels: dict[int, str] | None = None,
+    pixel_area: float | None = None,
+    area_unit: str = "km2",
+    include_all_labels: bool = True,
+) -> xr.Dataset:
+    """Compute class counts/percent/area through time."""
+    da = _extract_class_dataarray(classes, variable=variable)
+    if time_dim not in da.dims:
+        raise ValueError(
+            f"Input classes must contain time dimension {time_dim!r}. Found {da.dims}."
+        )
+
+    nt = da.sizes[time_dim]
+    reshaped = np.asarray(da.values).reshape(nt, -1)
+
+    observed_codes = np.unique(reshaped[np.isfinite(reshaped)].astype(np.int64))
+    if observed_codes.size == 0:
+        raise ValueError("No finite class values found in input.")
+    class_codes = _resolve_class_codes(observed_codes, class_labels, include_all_labels)
+
+    counts = np.zeros((nt, len(class_codes)), dtype=np.int64)
+    totals = np.zeros(nt, dtype=np.int64)
+    code_to_idx = {code: i for i, code in enumerate(class_codes)}
+
+    for i in range(nt):
+        vals = reshaped[i]
+        valid = vals[np.isfinite(vals)]
+        totals[i] = valid.size
+        if valid.size == 0:
+            continue
+        codes, cts = np.unique(valid.astype(np.int64), return_counts=True)
+        for code, cnt in zip(codes.tolist(), cts.tolist()):
+            idx = code_to_idx.get(int(code))
+            if idx is not None:
+                counts[i, idx] = int(cnt)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        percent = (counts / totals[:, None]) * 100.0
+
+    out = xr.Dataset(
+        {
+            "pixel_count": ((time_dim, "class_code"), counts),
+            "percent_of_valid": ((time_dim, "class_code"), percent),
+            "total_valid_pixels": (time_dim, totals),
+        },
+        coords={
+            time_dim: da[time_dim],
+            "class_code": np.asarray(class_codes, dtype=np.int64),
+        },
+    )
+
+    if class_labels is not None:
+        names = [class_labels.get(c, f"Unknown ({c})") for c in class_codes]
+        out["class_name"] = ("class_code", np.asarray(names, dtype=object))
+
+    if pixel_area is not None:
+        if pixel_area <= 0:
+            raise ValueError("pixel_area must be > 0 when provided.")
+        factor = _area_factor(area_unit)
+        out[f"area_{area_unit}"] = (
+            (time_dim, "class_code"),
+            counts.astype(float) * pixel_area * factor,
+        )
+
+    out.attrs["source_variable"] = da.name if da.name is not None else "unnamed"
+    return out
+
+
+def class_transition_matrix(
+    classes: xr.DataArray | xr.Dataset,
+    start_time: object,
+    end_time: object,
+    variable: str | None = None,
+    time_dim: str = "time",
+    class_labels: dict[int, str] | None = None,
+    pixel_area: float | None = None,
+    area_unit: str = "km2",
+    include_all_labels: bool = True,
+) -> xr.Dataset:
+    """Compute class transition matrix between two timesteps."""
+    da = _extract_class_dataarray(classes, variable=variable)
+    if time_dim not in da.dims:
+        raise ValueError(
+            f"Input classes must contain time dimension {time_dim!r}. Found {da.dims}."
+        )
+
+    a = da.sel({time_dim: start_time})
+    b = da.sel({time_dim: end_time})
+
+    av = np.asarray(a.values).ravel()
+    bv = np.asarray(b.values).ravel()
+    mask = np.isfinite(av) & np.isfinite(bv)
+    av = av[mask].astype(np.int64)
+    bv = bv[mask].astype(np.int64)
+
+    if av.size == 0:
+        raise ValueError("No overlapping finite class values for selected times.")
+
+    observed = np.unique(np.concatenate([av, bv]))
+    class_codes = _resolve_class_codes(observed, class_labels, include_all_labels)
+    code_to_idx = {code: i for i, code in enumerate(class_codes)}
+
+    mat = np.zeros((len(class_codes), len(class_codes)), dtype=np.int64)
+    for c_from, c_to in zip(av.tolist(), bv.tolist()):
+        i = code_to_idx.get(int(c_from))
+        j = code_to_idx.get(int(c_to))
+        if i is not None and j is not None:
+            mat[i, j] += 1
+
+    total = int(mat.sum())
+    percent = (mat.astype(float) / float(total)) * 100.0
+
+    out = xr.Dataset(
+        {
+            "pixel_count": (("from_class", "to_class"), mat),
+            "percent_of_valid": (("from_class", "to_class"), percent),
+        },
+        coords={
+            "from_class": np.asarray(class_codes, dtype=np.int64),
+            "to_class": np.asarray(class_codes, dtype=np.int64),
+        },
+    )
+
+    if class_labels is not None:
+        out["from_name"] = (
+            "from_class",
+            np.asarray([class_labels.get(c, f"Unknown ({c})") for c in class_codes]),
+        )
+        out["to_name"] = (
+            "to_class",
+            np.asarray([class_labels.get(c, f"Unknown ({c})") for c in class_codes]),
+        )
+
+    if pixel_area is not None:
+        if pixel_area <= 0:
+            raise ValueError("pixel_area must be > 0 when provided.")
+        factor = _area_factor(area_unit)
+        out[f"area_{area_unit}"] = (
+            ("from_class", "to_class"),
+            mat.astype(float) * pixel_area * factor,
+        )
+
+    out.attrs.update(
+        total_valid_pixels=total,
+        source_variable=da.name if da.name is not None else "unnamed",
+        start_time=str(np.asarray(a[time_dim].values)),
+        end_time=str(np.asarray(b[time_dim].values)),
+    )
+    return out
+
+
+def detect_wet_events(
+    data: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    threshold: float = 0.0,
+    time_dim: str = "time",
+) -> xr.Dataset:
+    """Detect wet-event timing and persistence metrics from time series."""
+    if isinstance(data, xr.Dataset):
+        if variable is None:
+            if len(data.data_vars) == 1:
+                da = next(iter(data.data_vars.values()))
+            else:
+                raise ValueError(
+                    "Dataset input requires variable=... when multiple variables exist."
+                )
+        else:
+            if variable not in data.data_vars:
+                raise ValueError(
+                    f"Variable {variable!r} not found in Dataset. "
+                    f"Available: {list(data.data_vars)}"
+                )
+            da = data[variable]
+    else:
+        da = data
+
+    if time_dim not in da.dims:
+        raise ValueError(
+            f"Input data must contain time dimension {time_dim!r}. Found {da.dims}."
+        )
+
+    valid = xr.ufuncs.isfinite(da)
+    on = (da >= threshold) & valid
+
+    n_total = valid.sum(dim=time_dim)
+    n_on = on.sum(dim=time_dim)
+    on_fraction = xr.where(n_total > 0, n_on / n_total, np.nan)
+
+    t_year = _time_to_year_fraction(da[time_dim])
+    t_b, _ = xr.broadcast(t_year, da)
+    first_on = t_b.where(on).min(dim=time_dim, skipna=True)
+    last_on = t_b.where(on).max(dim=time_dim, skipna=True)
+
+    def _max_run_1d(arr: np.ndarray) -> int:
+        best = 0
+        cur = 0
+        for value in arr:
+            if bool(value):
+                cur += 1
+                if cur > best:
+                    best = cur
+            else:
+                cur = 0
+        return best
+
+    longest = xr.apply_ufunc(
+        _max_run_1d,
+        on.fillna(False).astype(np.int8),
+        input_core_dims=[[time_dim]],
+        output_core_dims=[[]],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[np.int64],
+    )
+
+    out = xr.Dataset(
+        {
+            "first_on_year": first_on,
+            "last_on_year": last_on,
+            "on_count": n_on.astype(np.int64),
+            "on_fraction": on_fraction,
+            "longest_on_streak": longest.astype(np.int64),
+        }
+    )
+    out.attrs["threshold"] = threshold
+    out.attrs["time_basis"] = "fractional_year"
+    return out
+
+
+def summarize_by_polygons(
+    data: xr.DataArray | xr.Dataset,
+    polygons: object,
+    variable: str | None = None,
+    time_dim: str = "time",
+    polygon_id_col: str | None = None,
+    stats: tuple[str, ...] = ("mean", "median", "std", "count"),
+):
+    """Summarize raster values over polygon features.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Rows represent polygon/time combinations (or polygon only when there
+        is no time dimension).
+    """
+    try:
+        import geopandas as gpd
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise ImportError("summarize_by_polygons requires geopandas.") from exc
+
+    try:
+        from shapely import contains_xy
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise ImportError("summarize_by_polygons requires shapely>=2.") from exc
+
+    if isinstance(data, xr.Dataset):
+        if variable is None:
+            if len(data.data_vars) == 1:
+                da = next(iter(data.data_vars.values()))
+            else:
+                raise ValueError(
+                    "Dataset input requires variable=... when multiple variables exist."
+                )
+        else:
+            if variable not in data.data_vars:
+                raise ValueError(
+                    f"Variable {variable!r} not found in Dataset. "
+                    f"Available: {list(data.data_vars)}"
+                )
+            da = data[variable]
+    else:
+        da = data
+
+    if "y" not in da.dims or "x" not in da.dims:
+        raise ValueError("Data must include spatial dimensions 'y' and 'x'.")
+
+    if isinstance(polygons, (str, Path)):
+        gdf = gpd.read_file(polygons)
+    elif hasattr(polygons, "geometry"):
+        gdf = polygons.copy()
+    else:
+        raise TypeError("polygons must be a path-like or GeoDataFrame.")
+
+    if gdf.empty:
+        raise ValueError("No polygons provided.")
+
+    xv = np.asarray(da["x"].values, dtype=float)
+    yv = np.asarray(da["y"].values, dtype=float)
+    xx, yy = np.meshgrid(xv, yv)
+
+    has_time = time_dim in da.dims
+    rows: list[dict[str, object]] = []
+
+    for idx, row in gdf.iterrows():
+        geom = row.geometry
+        mask = contains_xy(geom, xx, yy)
+        if not np.any(mask):
+            continue
+
+        pid = row[polygon_id_col] if polygon_id_col and polygon_id_col in row else idx
+        masked = da.where(mask)
+
+        if has_time:
+            for t in masked[time_dim].values.tolist():
+                vals = np.asarray(masked.sel({time_dim: t}).values).ravel()
+                vals = vals[np.isfinite(vals)]
+                rec: dict[str, object] = {"polygon_id": pid, time_dim: t}
+                for stat in stats:
+                    if vals.size == 0:
+                        rec[stat] = np.nan
+                    elif stat == "mean":
+                        rec[stat] = float(np.mean(vals))
+                    elif stat == "median":
+                        rec[stat] = float(np.median(vals))
+                    elif stat == "std":
+                        rec[stat] = float(np.std(vals))
+                    elif stat == "count":
+                        rec[stat] = int(vals.size)
+                    else:
+                        raise ValueError(f"Unsupported stat {stat!r}.")
+                rows.append(rec)
+        else:
+            vals = np.asarray(masked.values).ravel()
+            vals = vals[np.isfinite(vals)]
+            rec = {"polygon_id": pid}
+            for stat in stats:
+                if vals.size == 0:
+                    rec[stat] = np.nan
+                elif stat == "mean":
+                    rec[stat] = float(np.mean(vals))
+                elif stat == "median":
+                    rec[stat] = float(np.median(vals))
+                elif stat == "std":
+                    rec[stat] = float(np.std(vals))
+                elif stat == "count":
+                    rec[stat] = int(vals.size)
+                else:
+                    raise ValueError(f"Unsupported stat {stat!r}.")
+            rows.append(rec)
+
+    import pandas as pd
+
+    return pd.DataFrame(rows)
+
+
+def quality_uncertainty_summary(
+    data: xr.DataArray | xr.Dataset,
+    variable: str | None = None,
+    time_dim: str = "time",
+    wet_threshold: float = 0.0,
+    low_support_threshold: float = 0.5,
+) -> xr.Dataset:
+    """Compute quality/uncertainty diagnostics for time-series stacks."""
+    if isinstance(data, xr.Dataset):
+        if variable is None:
+            if len(data.data_vars) == 1:
+                da = next(iter(data.data_vars.values()))
+            else:
+                raise ValueError(
+                    "Dataset input requires variable=... when multiple variables exist."
+                )
+        else:
+            if variable not in data.data_vars:
+                raise ValueError(
+                    f"Variable {variable!r} not found in Dataset. "
+                    f"Available: {list(data.data_vars)}"
+                )
+            da = data[variable]
+    else:
+        da = data
+
+    if time_dim not in da.dims:
+        raise ValueError(
+            f"Input data must contain time dimension {time_dim!r}. Found {da.dims}."
+        )
+    if not (0.0 <= low_support_threshold <= 1.0):
+        raise ValueError("low_support_threshold must be in [0, 1].")
+
+    valid = xr.ufuncs.isfinite(da)
+    n_total = xr.full_like(valid.isel({time_dim: 0}), da.sizes[time_dim], dtype=np.int64)
+    n_valid = valid.sum(dim=time_dim).astype(np.int64)
+    valid_fraction = n_valid / n_total
+    missing_fraction = 1.0 - valid_fraction
+
+    wet = (da >= wet_threshold) & valid
+    wet_fraction = xr.where(n_valid > 0, wet.sum(dim=time_dim) / n_valid, np.nan)
+
+    out = xr.Dataset(
+        {
+            "n_total": n_total,
+            "n_valid": n_valid,
+            "valid_fraction": valid_fraction,
+            "missing_fraction": missing_fraction,
+            "wet_fraction": wet_fraction,
+            "low_support": (valid_fraction < low_support_threshold).astype(np.int8),
+        }
+    )
+
+    if "sensor" in da.coords and da["sensor"].dims == (time_dim,):
+        sensor_coord = xr.DataArray(da["sensor"].values, dims=[time_dim])
+        observed = xr.where(valid, sensor_coord, "")
+
+        def _dominant_sensor_ratio(values: np.ndarray) -> float:
+            items = [v for v in values.tolist() if v != ""]
+            if not items:
+                return np.nan
+            _, counts = np.unique(items, return_counts=True)
+            return float(np.max(counts) / np.sum(counts))
+
+        def _sensor_type_count(values: np.ndarray) -> int:
+            items = [v for v in values.tolist() if v != ""]
+            return int(len(np.unique(items)))
+
+        out["sensor_dominant_fraction"] = xr.apply_ufunc(
+            _dominant_sensor_ratio,
+            observed,
+            input_core_dims=[[time_dim]],
+            output_core_dims=[[]],
+            vectorize=True,
+            dask="parallelized",
+            output_dtypes=[float],
+        )
+        out["sensor_count"] = xr.apply_ufunc(
+            _sensor_type_count,
+            observed,
+            input_core_dims=[[time_dim]],
+            output_core_dims=[[]],
+            vectorize=True,
+            dask="parallelized",
+            output_dtypes=[np.int64],
+        )
+
+    out.attrs["wet_threshold"] = wet_threshold
+    out.attrs["low_support_threshold"] = low_support_threshold
+    return out
+
+
+def build_run_manifest(
+    parameters: dict[str, object] | None = None,
+    input_paths: list[str | Path] | None = None,
+    output_path: str | Path | None = None,
+    extras: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Build and optionally save a reproducibility manifest."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        wm_version = version("wetlandmapper")
+    except PackageNotFoundError:
+        wm_version = "unknown"
+
+    hashes: dict[str, str] = {}
+    for pathlike in input_paths or []:
+        path = Path(pathlike)
+        if not path.exists():
+            raise FileNotFoundError(f"Input path not found: {path}")
+        if path.is_file():
+            hashes[str(path)] = sha256(path.read_bytes()).hexdigest()
+
+    manifest: dict[str, object] = {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "wetlandmapper_version": wm_version,
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "parameters": parameters or {},
+        "input_hashes_sha256": hashes,
+        "extras": extras or {},
+    }
+
+    if output_path is not None:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    return manifest

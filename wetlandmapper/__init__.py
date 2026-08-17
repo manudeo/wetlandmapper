@@ -29,11 +29,18 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 from .analysis import (
+    build_run_manifest,
+    class_area_timeseries,
     class_summary,
+    class_transition_matrix,
+    detect_wet_events,
     last_occurrence,
     linear_trend,
+    quality_uncertainty_summary,
+    summarize_by_polygons,
     summarize_dynamics,
     summarize_wct,
+    trend_products,
 )
 from .dynamics import (
     DYNAMICS_CLASSES,
@@ -77,7 +84,14 @@ __all__ = [
     # Analysis utilities
     "last_occurrence",
     "linear_trend",
+    "trend_products",
     "class_summary",
+    "class_area_timeseries",
+    "class_transition_matrix",
+    "detect_wet_events",
+    "summarize_by_polygons",
+    "quality_uncertainty_summary",
+    "build_run_manifest",
     "summarize_dynamics",
     "summarize_wct",
     # Index computation

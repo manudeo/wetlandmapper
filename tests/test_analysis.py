@@ -5,11 +5,18 @@ import pytest
 import xarray as xr
 
 from wetlandmapper import (
+    build_run_manifest,
+    class_area_timeseries,
     class_summary,
+    class_transition_matrix,
+    detect_wet_events,
     last_occurrence,
     linear_trend,
+    quality_uncertainty_summary,
+    summarize_by_polygons,
     summarize_dynamics,
     summarize_wct,
+    trend_products,
 )
 from wetlandmapper.dynamics import DYNAMICS_CLASSES
 from wetlandmapper.wct import WCT_CLASSES, WCT_LEVEL2_CLASSES
@@ -359,3 +366,151 @@ def test_linear_trend_dataset_variable_selection_and_errors():
 
     with pytest.raises(ValueError, match="not found"):
         linear_trend(ds, variable="missing")
+
+
+def test_trend_products_significance_and_classification(tmp_path):
+    times = np.array(
+        [
+            np.datetime64("2000-01-01"),
+            np.datetime64("2001-01-01"),
+            np.datetime64("2002-01-01"),
+            np.datetime64("2003-01-01"),
+        ]
+    )
+    years = np.array([2000.0, 2001.0, 2002.0, 2003.0], dtype=float)
+    vals = np.zeros((4, 1, 2), dtype=float)
+    vals[:, 0, 0] = 0.5 * years + 1.0
+    vals[:, 0, 1] = -0.5 * years + 3.0
+    da = xr.DataArray(
+        vals,
+        dims=["time", "y", "x"],
+        coords={"time": times, "y": [0], "x": [0, 1]},
+    )
+
+    out = trend_products(da)
+
+    assert "slope_significant" in out
+    assert int(out["trend_class"].sel(y=0, x=0)) == 1
+    assert int(out["trend_class"].sel(y=0, x=1)) == -1
+
+
+def test_class_area_timeseries_and_transition_matrix():
+    times = np.array(
+        [
+            np.datetime64("2020-01-01"),
+            np.datetime64("2021-01-01"),
+        ]
+    )
+    classes = xr.DataArray(
+        np.array(
+            [
+                [[0, 1], [1, 2]],
+                [[1, 1], [2, 2]],
+            ],
+            dtype=float,
+        ),
+        dims=["time", "y", "x"],
+        coords={"time": times, "y": [0, 1], "x": [0, 1]},
+        name="classes",
+    )
+
+    ts = class_area_timeseries(classes, pixel_area=100.0, area_unit="m2")
+    assert int(ts["pixel_count"].sel(time=times[0], class_code=1)) == 2
+    assert float(ts["area_m2"].sel(time=times[1], class_code=2)) == 200.0
+
+    mat = class_transition_matrix(classes, start_time=times[0], end_time=times[1])
+    assert int(mat["pixel_count"].sel(from_class=0, to_class=1)) == 1
+    assert int(mat["pixel_count"].sel(from_class=2, to_class=2)) == 1
+
+
+def test_detect_wet_events():
+    times = np.array(
+        [
+            np.datetime64("2020-01-01"),
+            np.datetime64("2021-01-01"),
+            np.datetime64("2022-01-01"),
+            np.datetime64("2023-01-01"),
+        ]
+    )
+    da = xr.DataArray(
+        np.array(
+            [
+                [[-1.0, 1.0]],
+                [[2.0, 1.0]],
+                [[3.0, -1.0]],
+                [[-1.0, -1.0]],
+            ]
+        ),
+        dims=["time", "y", "x"],
+        coords={"time": times, "y": [0], "x": [0, 1]},
+    )
+
+    out = detect_wet_events(da, threshold=0.0)
+    assert int(out["on_count"].sel(y=0, x=0)) == 2
+    assert int(out["on_count"].sel(y=0, x=1)) == 2
+    assert int(out["longest_on_streak"].sel(y=0, x=0)) == 2
+
+
+def test_quality_uncertainty_summary_with_sensor_coord():
+    times = np.array(
+        [
+            np.datetime64("2020-01-01"),
+            np.datetime64("2021-01-01"),
+            np.datetime64("2022-01-01"),
+            np.datetime64("2023-01-01"),
+        ]
+    )
+    sensors = np.array(["L8", "L8", "S2", "S2"], dtype=object)
+    da = xr.DataArray(
+        np.array(
+            [
+                [[1.0, np.nan]],
+                [[2.0, np.nan]],
+                [[3.0, 5.0]],
+                [[4.0, np.nan]],
+            ]
+        ),
+        dims=["time", "y", "x"],
+        coords={"time": times, "y": [0], "x": [0, 1], "sensor": ("time", sensors)},
+    )
+
+    out = quality_uncertainty_summary(da, low_support_threshold=0.8)
+    assert float(out["valid_fraction"].sel(y=0, x=0)) == 1.0
+    assert int(out["low_support"].sel(y=0, x=1)) == 1
+    assert "sensor_count" in out
+
+
+def test_build_run_manifest_writes_file(tmp_path):
+    inp = tmp_path / "input.txt"
+    inp.write_text("abc", encoding="utf-8")
+    out_json = tmp_path / "manifest.json"
+
+    manifest = build_run_manifest(
+        parameters={"alpha": 0.05},
+        input_paths=[inp],
+        output_path=out_json,
+        extras={"note": "test"},
+    )
+
+    assert "created_utc" in manifest
+    assert str(inp) in manifest["input_hashes_sha256"]
+    assert out_json.exists()
+
+
+def test_summarize_by_polygons_mean_count():
+    gpd = pytest.importorskip("geopandas")
+    shapely = pytest.importorskip("shapely")
+    box = shapely.box
+
+    da = xr.DataArray(
+        np.array([[[1.0, 2.0], [3.0, 4.0]]]),
+        dims=["time", "y", "x"],
+        coords={"time": [np.datetime64("2020-01-01")], "y": [0.0, 1.0], "x": [0.0, 1.0]},
+    )
+    gdf = gpd.GeoDataFrame({"pid": [7], "geometry": [box(-0.1, -0.1, 1.1, 1.1)]})
+
+    df = summarize_by_polygons(da, gdf, polygon_id_col="pid", stats=("mean", "count"))
+    assert len(df) == 1
+    assert int(df.loc[0, "polygon_id"]) == 7
+    assert float(df.loc[0, "mean"]) == 2.5
+    assert int(df.loc[0, "count"]) == 4
