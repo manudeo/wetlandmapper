@@ -26,8 +26,9 @@ bibliography: paper.bib
 `WetlandMapper` is an open-source Python package that operationalises two peer-reviewed
 remote-sensing frameworks for automated wetland analysis from multispectral satellite
 data, now expanded with comprehensive spectral index computation, terrain analysis,
-and enhanced visualisation capabilities. The package is available on PyPI (`pip install wetlandmapper`) and archived at
-Zenodo [@wetlandmapper_zenodo].
+and enhanced visualisation capabilities. The package is available on PyPI and
+conda-forge (`pip install wetlandmapper` or `conda install -c conda-forge wetlandmapper`)
+and archived at Zenodo [@wetlandmapper_zenodo].
 
 The first framework is a **wetland dynamics classification** method [@singh2022basin]
 that maps floodplain wetlands at basin scale from a multi-temporal MNDWI time series
