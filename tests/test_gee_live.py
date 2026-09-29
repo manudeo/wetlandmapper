@@ -104,6 +104,34 @@ def test_live_fetch_xee_each_landsat_sensor_returns_expected_data(
         assert finite >= 0
 
 
+def test_live_fetch_xee_return_scene_count_matches_manual_count():
+    gee.init(project=GEE_PROJECT or None)
+    data, n_obs = gee.fetch_xee(
+        aoi=Path(GEE_AOI),
+        project=GEE_PROJECT or None,
+        chunks={"time": 1, "lon": 512, "lat": 512},
+        start="2024-01-01",
+        end="2024-12-31",
+        sensor="LandsatAll",
+        index="MNDWI",
+        scale=30,
+        max_cloud_cover=100.0,
+        temporal_aggregation="annual",
+        return_scene_count=True,
+    )
+    data = data.compute()
+    n_obs = n_obs.compute()
+
+    assert data.sizes["time"] == 1
+    assert n_obs.sizes["time"] == 1
+    assert n_obs.shape == data.shape
+    # Every pixel where the median composite is finite must have been fed
+    # by at least one cloud-free scene.
+    finite_mask = np.isfinite(data.values)
+    assert bool((n_obs.values[finite_mask] >= 1).all())
+    assert bool((n_obs.values >= 0).all())
+
+
 def test_live_fetch_xee_modisall_returns_finite_data():
     data = _compute_dataset(
         start="2024-01-01",

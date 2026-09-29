@@ -164,7 +164,7 @@ _BAND_MAP: dict[str, dict[str, str]] = {
         "nir": "B8",
         "swir": "B11",  # SWIR1 (20 m; resampled by GEE to 10 m)
         "swir2": "B12",
-        "qa": "QA60",
+        "qa": "SCL",
     },
     # MODIS Terra/Aqua MOD09A1 / MYD09A1 (8-day 500m surface reflectance)
     # Scale: multiply by 0.0001 (stored as int16, range -100 to 16000)
@@ -306,9 +306,15 @@ def _mask_landsat_clouds(image: EEImage) -> EEImage:
 
 
 def _mask_sentinel2_clouds(image: EEImage) -> EEImage:
-    """Mask opaque clouds (bit 10) and cirrus (bit 11) using QA60 (S2 SR)."""
-    qa = image.select("QA60")
-    mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
+    """Mask cloud, cirrus, shadow, and snow classes using the S2 SCL band."""
+    scl = image.select("SCL")
+    mask = (
+        scl.neq(3)
+        .And(scl.neq(8))
+        .And(scl.neq(9))
+        .And(scl.neq(10))
+        .And(scl.neq(11))
+    )
     return image.updateMask(mask)
 
 
@@ -763,6 +769,7 @@ def _build_composites(
     index_bands: list[str],
     reduction_method: str = "median",
     percentile: float = 50.0,
+    track_count: bool = False,
 ) -> EEImageCollection:
     """Reduce an ImageCollection to one composite per chosen period.
 
@@ -780,6 +787,12 @@ def _build_composites(
         One of "median", "mean", "percentile". Default "median".
     percentile : float
         Percentile value if reduction_method is "percentile". Default 50.0.
+    track_count : bool
+        If True, add an extra ``"n_obs"`` band to each composite holding the
+        per-pixel count of unmasked (cloud-free) observations that fed the
+        reduction in that period. 0 (not NaN) where the period had images
+        but every pixel was masked. Not supported for ``"all"`` (each image
+        is already a single scene, so a count is undefined).
 
     Returns
     -------
@@ -827,6 +840,16 @@ def _build_composites(
         else:
             raise AssertionError(f"Unhandled reduction_method: {reduction_method}")
         fallback = _make_nan_image(index_bands, timestamp)
+        if track_count:
+            count_img = (
+                period_col.select(index_bands[0])
+                .reduce(ee.Reducer.count())
+                .rename("n_obs")
+                .float()
+            )
+            real = real.addBands(count_img)
+            zero_count = ee.Image.constant(0).rename("n_obs").float()
+            fallback = fallback.addBands(zero_count)
         return ee.Image(ee.Algorithms.If(period_col.size().gt(0), real, fallback))
 
     if temporal_aggregation == "annual":
@@ -1070,12 +1093,27 @@ def _build_processed_collection(
     months: list[int] | None = None,
     reduction_method: str = "median",
     percentile: float = 50.0,
+    track_count: bool = False,
 ) -> tuple[EEImageCollection, EEGeometry, list[str]]:
     """Build and process collection for fetch/fetch_xee with shared behavior."""
     sensor = _resolve_sensor(sensor)
     reduction_method = _normalize_reduction_method(reduction_method)
     if reduction_method == "percentile":
         _validate_percentile(percentile)
+
+    if track_count and temporal_aggregation == "all":
+        raise ValueError(
+            "return_scene_count=True requires temporal_aggregation to be "
+            "'annual', 'monthly', or 'seasonal' — with 'all' every image is "
+            "already a single scene, so a per-pixel scene count is undefined."
+        )
+    if track_count and climate_adaptive:
+        raise ValueError(
+            "return_scene_count=True is not supported with climate_adaptive=True. "
+            "Climate-adaptive compositing selects one best-matching month per "
+            "pixel (qualityMosaic) rather than reducing across all available "
+            "scenes, so a scene count does not apply the same way."
+        )
 
     if custom_indices is None:
         custom_indices = {}
@@ -1223,6 +1261,7 @@ def _build_processed_collection(
             indices_list,
             reduction_method,
             percentile,
+            track_count=track_count,
         )
 
     return collection, ee_geom, indices_list
@@ -1339,12 +1378,13 @@ def _build_dem_mask(
     ee.Image
         Single-band mask: 1 = valid terrain, 0 = artefact.
     """
-    dem = (
-        ee.ImageCollection("COPERNICUS/DEM/GLO30")
+    dem_collection = (
+        ee.ImageCollection("COPERNICUS/DEM/GLO30_2024_1")
         .filterBounds(ee_geom)
         .select("DEM")
-        .mean()
     )
+    dem_projection = dem_collection.first().projection()
+    dem = dem_collection.mosaic().setDefaultProjection(dem_projection)
 
     mask = ee.Image.constant(1)
 
@@ -1411,7 +1451,8 @@ def fetch(
     months: list[int] | None = None,
     reduction_method: str = "median",
     percentile: float = 50.0,
-) -> "xr.DataArray | xr.Dataset":
+    return_scene_count: bool = False,
+) -> "xr.DataArray | xr.Dataset | tuple[xr.DataArray | xr.Dataset, xr.DataArray]":
     """Retrieve spectral indices from GEE as an xarray object (immediate download).
 
     Fetches an image collection, applies cloud masking and surface-reflectance
@@ -1480,6 +1521,16 @@ def fetch(
     percentile : float
         Percentile to use when ``reduction_method="percentile"``.
         Must be between 0 and 100 inclusive. Default 50.0.
+    return_scene_count : bool
+        If ``True``, also return a per-pixel count of cloud-free scenes
+        that fed each temporal composite, as a second, separate object —
+        useful for diagnosing whether an annual/monthly/seasonal median is
+        biased by an uneven number of observations across periods (e.g.
+        sensor changeovers, seasonal cloud cover). Requires
+        ``temporal_aggregation`` to be ``"annual"``, ``"monthly"``, or
+        ``"seasonal"`` (undefined for ``"all"``, where every image is
+        already a single scene) and ``climate_adaptive=False``. Default
+        ``False``.
 
         When ``climate_adaptive=True``, the algorithm:
 
@@ -1557,6 +1608,11 @@ def fetch(
         DataArray with dims ``(time, y, x)`` when a single index is requested.
     xr.Dataset
         Dataset with one variable per index, dims ``(time, y, x)``.
+    tuple[xr.DataArray | xr.Dataset, xr.DataArray]
+        When ``return_scene_count=True``, a ``(data, n_obs)`` tuple. ``data``
+        is the same DataArray/Dataset described above; ``n_obs`` is a
+        DataArray with dims ``(time, y, x)`` matching ``data``, holding the
+        per-pixel count of cloud-free scenes that fed each composite.
 
     Notes
     -----
@@ -1572,6 +1628,15 @@ def fetch(
     ...               sensor="LandsatAll",
     ...               temporal_aggregation="annual")
     >>> dynamics = classify_dynamics(mndwi, nYear=3)
+
+    Annual MNDWI with a per-pixel scene count to check for uneven-sampling
+    bias across years:
+
+    >>> mndwi, n_obs = fetch(aoi, "1984-01-01", "2023-12-31",
+    ...                      sensor="LandsatAll",
+    ...                      temporal_aggregation="annual",
+    ...                      return_scene_count=True)
+    >>> n_obs.sel(time="2005").item()  # scenes behind the 2005 median
 
     Post-monsoon WCT composite from Landsat 5 era:
 
@@ -1626,6 +1691,7 @@ def fetch(
         months=months,
         reduction_method=reduction_method,
         percentile=percentile,
+        track_count=return_scene_count,
     )
 
     n_images_info = collection.size().getInfo()
@@ -1653,7 +1719,8 @@ def fetch(
         band_arrays: dict[str, "xr.DataArray"] = {}
         failed = False
 
-        for idx in indices_list:
+        bands_to_fetch = list(indices_list) + (["n_obs"] if return_scene_count else [])
+        for idx in bands_to_fetch:
             try:
                 da_band = _ee_image_to_dataarray(img.select(idx), ee_geom, scale)
                 band_arrays[idx] = da_band
@@ -1689,11 +1756,20 @@ def fetch(
 
     combined = xr.concat(result_ds_list, dim="time")
 
+    if return_scene_count:
+        n_obs = combined["n_obs"]
+        n_obs.name = "n_obs"
+        combined = combined.drop_vars("n_obs")
+
     if isinstance(index, str):
         result = combined[index]
         result.name = index
-        return result
-    return combined
+    else:
+        result = combined
+
+    if return_scene_count:
+        return result, n_obs
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1730,7 +1806,8 @@ def fetch_xee(
     months: list[int] | None = None,
     reduction_method: str = "median",
     percentile: float = 50.0,
-) -> "xr.DataArray | xr.Dataset":
+    return_scene_count: bool = False,
+) -> "xr.DataArray | xr.Dataset | tuple[xr.DataArray | xr.Dataset, xr.DataArray]":
     """Retrieve spectral indices from GEE as a lazy Dask-backed xarray via xee.
 
     Parameters
@@ -1791,11 +1868,21 @@ def fetch_xee(
     percentile : float
         Percentile to use when ``reduction_method="percentile"``.
         Must be between 0 and 100 inclusive. Default 50.0.
+    return_scene_count : bool
+        If ``True``, also return a per-pixel count of cloud-free scenes
+        that fed each temporal composite, as a second, separate lazy
+        DataArray — useful for diagnosing whether an annual/monthly/seasonal
+        median is biased by an uneven number of observations across periods.
+        Requires ``temporal_aggregation`` to be ``"annual"``, ``"monthly"``,
+        or ``"seasonal"`` and ``climate_adaptive=False``. Default ``False``.
 
     Returns
     -------
     xr.DataArray or xr.Dataset
         Lazy object with dims ``(time, lat, lon)``.
+    tuple[xr.DataArray | xr.Dataset, xr.DataArray]
+        When ``return_scene_count=True``, a ``(data, n_obs)`` tuple, both
+        lazy with dims ``(time, lat, lon)``.
 
     Notes
     -----
@@ -1815,6 +1902,17 @@ def fetch_xee(
     ...     .transpose("time", "y", "x")
     ...     .compute()
     ... )
+
+    With a per-pixel scene count to check for uneven-sampling bias:
+
+    >>> mndwi_lazy, n_obs_lazy = fetch_xee(
+    ...     aoi, "1984-01-01", "2023-12-31",
+    ...     sensor="LandsatAll", temporal_aggregation="annual",
+    ...     return_scene_count=True,
+    ... )
+    >>> n_obs = n_obs_lazy.rename({"lat": "y", "lon": "x"}).transpose(
+    ...     "time", "y", "x"
+    ... ).compute()
     """
     _require_ee()
     try:
@@ -1867,6 +1965,7 @@ def fetch_xee(
         months=months,
         reduction_method=reduction_method,
         percentile=percentile,
+        track_count=return_scene_count,
     )
 
     # xee requires a bounding box — arbitrary polygon → one-pixel bug
@@ -1952,11 +2051,21 @@ def fetch_xee(
     if "lat" in ds_lazy.dims:
         ds_lazy = ds_lazy.sortby("lat", ascending=False)
 
+    n_obs = None
+    if return_scene_count:
+        n_obs = ds_lazy["n_obs"]
+        n_obs.name = "n_obs"
+
     if isinstance(index, str):
         da = ds_lazy[index]
         da.name = index
-        return da
-    return ds_lazy[indices_list]
+        result: "xr.DataArray | xr.Dataset" = da
+    else:
+        result = ds_lazy[indices_list]
+
+    if return_scene_count:
+        return result, cast("xr.DataArray", n_obs)
+    return result
 
 # ---------------------------------------------------------------------------
 # Dependency guard

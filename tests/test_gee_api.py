@@ -1,5 +1,7 @@
 import inspect
 from dataclasses import dataclass
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -66,6 +68,67 @@ def test_gee_valid_indices_match_indices_module_support():
     assert gee._VALID_INDICES == expected
 
 
+def _build_processed_collection_kwargs(**overrides):
+    """Minimal required kwargs for _build_processed_collection, patchable per test."""
+    kwargs = dict(
+        aoi={"type": "Point", "coordinates": [0.0, 0.0]},
+        start="2020-01-01",
+        end="2020-12-31",
+        sensor="Landsat8",
+        index="MNDWI",
+        custom_indices=None,
+        max_cloud_cover=20.0,
+        temporal_aggregation="annual",
+        use_slc_off=False,
+        climate_adaptive=False,
+        min_precip_mm=20.0,
+        min_temp_c=5.0,
+        hydroperiod_months=1,
+        hydroperiod_nan_policy="valid",
+        wetness_index="MNDWI",
+        wetness_threshold=0.0,
+        dem_mask=False,
+        max_slope_deg=5.0,
+        max_tpi_m=None,
+        tpi_window_px=5,
+        max_local_range_m=None,
+        local_range_window_px=5,
+        max_elevation_m=None,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_return_scene_count_rejects_temporal_aggregation_all():
+    """A scene count is undefined for 'all' — each image is already one scene."""
+    with pytest.raises(ValueError, match="return_scene_count"):
+        gee._build_processed_collection(
+            **_build_processed_collection_kwargs(
+                temporal_aggregation="all",
+                track_count=True,
+            )
+        )
+
+
+def test_return_scene_count_rejects_climate_adaptive():
+    """Climate-adaptive compositing picks one best month, not a reduction."""
+    with pytest.raises(ValueError, match="return_scene_count"):
+        gee._build_processed_collection(
+            **_build_processed_collection_kwargs(
+                climate_adaptive=True,
+                track_count=True,
+            )
+        )
+
+
+def test_return_scene_count_present_in_fetch_and_fetch_xee_signatures():
+    """return_scene_count should be a shared, opt-in, default-False parameter."""
+    for func in (gee.fetch, gee.fetch_xee):
+        sig = inspect.signature(func)
+        assert "return_scene_count" in sig.parameters
+        assert sig.parameters["return_scene_count"].default is False
+
+
 def test_hydroperiod_equivalent_months_valid_policy_ignores_masked_months():
     """Wet in all valid months should remain fully wet despite many masked months."""
     wet = np.array([5.0])
@@ -108,6 +171,77 @@ def test_hydroperiod_mean_excludes_empty_years_from_average():
 def test_hydroperiod_nan_policy_rejects_invalid_value():
     with pytest.raises(ValueError, match="hydroperiod_nan_policy"):
         gee._normalize_hydroperiod_nan_policy("bad_mode")
+
+
+def test_sentinel2_cloud_mask_uses_scl_cloud_shadow_and_snow_classes():
+    class FakeMask:
+        def __init__(self, excluded_classes=()):
+            self.excluded_classes = set(excluded_classes)
+
+        def And(self, other):
+            return FakeMask(self.excluded_classes | other.excluded_classes)
+
+    class FakeScl:
+        def neq(self, value):
+            return FakeMask({value})
+
+    class FakeImage:
+        def __init__(self):
+            self.selected_band = None
+            self.applied_mask = None
+
+        def select(self, band_name):
+            self.selected_band = band_name
+            return FakeScl()
+
+        def updateMask(self, mask):
+            self.applied_mask = mask
+            return self
+
+    image = FakeImage()
+
+    result = gee._mask_sentinel2_clouds(image)
+
+    assert result is image
+    assert image.selected_band == "SCL"
+    assert image.applied_mask.excluded_classes == {3, 8, 9, 10, 11}
+    assert gee._BAND_MAP["Sentinel2"]["qa"] == "SCL"
+
+
+def test_dem_mask_uses_current_copernicus_collection_and_native_projection(monkeypatch):
+    collection = Mock()
+    collection.filterBounds.return_value = collection
+    collection.select.return_value = collection
+    projection = object()
+    collection.first.return_value.projection.return_value = projection
+    dem = Mock()
+    collection.mosaic.return_value = dem
+    dem.setDefaultProjection.return_value = dem
+    terrain_mask = Mock()
+    terrain_mask.And.return_value = terrain_mask
+    terrain_mask.rename.return_value = terrain_mask
+    slope = Mock()
+    slope.lte.return_value = Mock()
+    image_api = SimpleNamespace(constant=Mock(return_value=terrain_mask))
+    ee_mock = SimpleNamespace(
+        ImageCollection=Mock(return_value=collection),
+        Image=image_api,
+        Terrain=SimpleNamespace(slope=Mock(return_value=slope)),
+    )
+    monkeypatch.setattr(gee, "ee", ee_mock)
+
+    gee._build_dem_mask(
+        ee_geom=object(),
+        max_slope_deg=5.0,
+        max_tpi_m=None,
+        max_local_range_m=None,
+        max_elevation_m=None,
+    )
+
+    ee_mock.ImageCollection.assert_called_once_with("COPERNICUS/DEM/GLO30_2024_1")
+    collection.mosaic.assert_called_once_with()
+    dem.setDefaultProjection.assert_called_once_with(projection)
+    ee_mock.Terrain.slope.assert_called_once_with(dem)
 
 
 @dataclass
