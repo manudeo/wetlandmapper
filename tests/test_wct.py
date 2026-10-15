@@ -295,6 +295,46 @@ class TestClassifyWCTEMALevel2:
         assert np.all((vals >= 0) & (vals <= 12))
 
 
+class TestMissingDataIsNaN:
+    @staticmethod
+    def _indices_with_gap(multispectral_ds):
+        indices = compute_indices(multispectral_ds).copy(deep=True)
+        indices["NDVI"][0, 0] = np.nan
+        indices["MNDWI"][1, 1] = np.nan
+        return indices
+
+    def test_ema_missing_pixels_are_nan_not_nonwetland(self, multispectral_ds):
+        indices = self._indices_with_gap(multispectral_ds)
+        result = classify_wct_ema(indices)
+        for name in ("wetland_cover_type", "combination_code", "wvt_code"):
+            assert result[name].isnull().values[0, 0]
+            assert result[name].isnull().values[1, 1]
+        assert int(result["wetland_cover_type"].isnull().sum()) == 2
+
+    def test_ema_level2_missing_pixels_are_nan(self, multispectral_ds):
+        indices = self._indices_with_gap(multispectral_ds)
+        result = classify_wct_ema_level2(indices)
+        assert int(result["wetland_cover_type_level2"].isnull().sum()) == 2
+
+    def test_threshold_missing_pixels_are_nan(self, multispectral_ds):
+        indices = self._indices_with_gap(multispectral_ds)
+        result = classify_wct(indices)
+        assert int(result.isnull().sum()) == 2
+
+    def test_valid_pixels_unchanged_by_missing_neighbours(self, multispectral_ds):
+        clean = compute_indices(multispectral_ds)
+        gappy = self._indices_with_gap(multispectral_ds)
+        a = classify_wct_ema(clean)["wetland_cover_type"]
+        b = classify_wct_ema(gappy)["wetland_cover_type"]
+        keep = b.notnull().values
+        np.testing.assert_array_equal(a.values[keep], b.values[keep])
+
+    def test_complete_input_keeps_int8_dtype(self, multispectral_ds):
+        indices = compute_indices(multispectral_ds)
+        assert classify_wct_ema(indices)["wetland_cover_type"].dtype == np.int8
+        assert classify_wct(indices).dtype == np.int8
+
+
 class TestBuildWVTEncodingTable:
     def test_build_wvt_encoding_table_returns_array(self):
         table = build_wvt_encoding_table(n_parts=4)

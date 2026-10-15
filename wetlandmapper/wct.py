@@ -358,6 +358,8 @@ def classify_wct_ema(
 
         ``"wetland_cover_type"``
             Integer raster of WCT class codes (dtype int8).
+            Pixels where any of MNDWI, NDVI or NDTI is NaN are set to NaN
+            instead of class 0, and the dtype becomes float in that case.
             CRS preserved from input if rioxarray is available.
         ``"combination_code"``
             Integer raster encoding the three index levels that produced
@@ -435,9 +437,16 @@ def classify_wct_ema(
     wvt_vals = wvt_table[ml, vl, tl]
 
     # Wrap both arrays as DataArrays preserving spatial coordinates
-    wct = xr.DataArray(wct_vals, dims=mndwi.dims, coords=mndwi.coords)
-    combo = xr.DataArray(combo_vals, dims=mndwi.dims, coords=mndwi.coords)
-    wvt_code = xr.DataArray(wvt_vals, dims=mndwi.dims, coords=mndwi.coords)
+    valid = _valid_mask(indices)
+    wct = _mask_missing(
+        xr.DataArray(wct_vals, dims=mndwi.dims, coords=mndwi.coords), valid
+    )
+    combo = _mask_missing(
+        xr.DataArray(combo_vals, dims=mndwi.dims, coords=mndwi.coords), valid
+    )
+    wvt_code = _mask_missing(
+        xr.DataArray(wvt_vals, dims=mndwi.dims, coords=mndwi.coords), valid
+    )
 
     combo.name = "combination_code"
     combo.attrs.update(
@@ -541,7 +550,10 @@ def classify_wct_ema_level2(
     table_l2 = build_ema_lookup_table_level2(n_parts=n_parts)
     l2_vals = table_l2[ml, vl, tl]
 
-    wct_l2 = xr.DataArray(l2_vals, dims=mndwi.dims, coords=mndwi.coords)
+    wct_l2 = _mask_missing(
+        xr.DataArray(l2_vals, dims=mndwi.dims, coords=mndwi.coords),
+        _valid_mask(indices),
+    )
     wct_l2 = _finalise(
         wct_l2,
         indices,
@@ -607,6 +619,7 @@ def classify_wct(
     -------
     xr.DataArray
         Integer raster of WCT codes (dtype int8). Name: ``"wetland_cover_type"``.
+        Pixels where any index is NaN are NaN (float dtype) rather than class 0.
 
     References
     ----------
@@ -656,6 +669,7 @@ def classify_wct(
         np.int8(1),
         wct,
     )
+    wct = _mask_missing(wct, _valid_mask(indices))
 
     return _finalise(
         wct, indices, method="threshold", extra_attrs={"thresholds": str(thr)}
@@ -676,6 +690,20 @@ def _validate_input(indices: xr.Dataset) -> None:
             f"Present: {set(indices.data_vars)}. "
             "Use wetlandmapper.compute_indices() to generate all three."
         )
+
+
+def _valid_mask(indices: xr.Dataset) -> xr.DataArray:
+    """True where MNDWI, NDVI and NDTI are all finite."""
+    return (
+        indices["MNDWI"].notnull() & indices["NDVI"].notnull() & indices["NDTI"].notnull()
+    )
+
+
+def _mask_missing(da: xr.DataArray, valid: xr.DataArray) -> xr.DataArray:
+    """Set unclassifiable pixels to NaN; keep the integer dtype if none are missing."""
+    if bool(valid.all()):
+        return da
+    return da.where(valid)
 
 
 def _finalise(

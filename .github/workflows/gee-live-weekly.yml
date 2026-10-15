@@ -1,13 +1,33 @@
-name: Weekly GEE Live Tests
+name: Quarterly GEE Live Tests
 
 on:
   schedule:
-    - cron: "0 4 * * 1"
+    - cron: "0 4 1 */3 *"
   workflow_dispatch:
 
 jobs:
+  gate:
+    name: Check Earth Engine secrets
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.WETLANDMAPPER_GEE_SERVICE_ACCOUNT }}
+          PROJECT: ${{ secrets.WETLANDMAPPER_GEE_PROJECT }}
+        run: |
+          if [ -n "$SERVICE_ACCOUNT" ] && [ -n "$PROJECT" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Earth Engine secrets are not configured; skipping live tests."
+          fi
+
   live-gee:
     name: Live Earth Engine smoke tests
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
     runs-on: ubuntu-latest
 
     steps:
