@@ -17,10 +17,10 @@ conda install -c conda-forge wetlandmapper
 conda install -c conda-forge wetlandmapper matplotlib
 
 # With Google Earth Engine support
-conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio
+conda install -c conda-forge wetlandmapper geopandas earthengine-api "xee>=0.0.24,<0.1.0" dask rasterio
 
 # Complete installation (core + plot + gee)
-conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio matplotlib
+conda install -c conda-forge wetlandmapper geopandas earthengine-api "xee>=0.0.24,<0.1.0" dask rasterio matplotlib scipy
 ```
 
 ---
@@ -33,7 +33,7 @@ If you prefer pip:
 pip install wetlandmapper
 ```
 
-This installs the core package with `numpy`, `xarray`, and `rioxarray`.
+This installs the core package with `numpy`, `pandas`, `xarray`, and `rioxarray`.
 
 To include the visualisation utilities:
 
@@ -41,7 +41,14 @@ To include the visualisation utilities:
 pip install "wetlandmapper[plot]"
 ```
 
-To include Google Earth Engine support (includes `earthengine-api`, `rasterio`, `xee`,
+For Student's t-test p-values from `linear_trend()` (instead of its normal
+approximation fallback), install the optional statistics dependencies:
+
+```bash
+pip install "wetlandmapper[stats]"
+```
+
+To include Google Earth Engine support (includes `earthengine-api`, `rasterio`, `xee` 0.0.x,
 `dask`, and `geopandas` for shapefile/GeoJSON AOI support):
 
 ```bash

@@ -132,7 +132,8 @@ pip install wetlandmapper
 **With optional dependencies:**
 ```bash
 pip install "wetlandmapper[gee]"    # Google Earth Engine support
-pip install "wetlandmapper[plot]"   # matplotlib, hvplot, bokeh
+pip install "wetlandmapper[plot]"   # matplotlib
+pip install "wetlandmapper[stats]"  # SciPy p-values for linear_trend
 pip install "wetlandmapper[all]"    # everything
 ```
 

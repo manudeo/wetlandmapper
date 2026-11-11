@@ -245,9 +245,11 @@ vectorized xarray workflow as the core classifiers.
 ## Dependencies and Installation
 
 `WetlandMapper` requires Python ≥ 3.10. Core dependencies are `numpy`
-[@harris2020array], `xarray` [@hoyer2017xarray], and `rioxarray` [@snow2022rioxarray].
+[@harris2020array], `pandas`, `xarray` [@hoyer2017xarray], and `rioxarray` [@snow2022rioxarray].
 The GEE submodule additionally requires `earthengine-api`, `rasterio`, `xee`, `dask`,
-and `geopandas`. The plotting submodule requires `matplotlib` [@hunter2007matplotlib].
+and `geopandas`. The plotting extra requires `matplotlib` [@hunter2007matplotlib].
+The optional `stats` extra installs SciPy for Student's t-test p-values in
+`linear_trend()`; without SciPy, the function uses a normal approximation.
 
 Installation via **conda** (recommended for ease of dependency management):
 
@@ -256,10 +258,10 @@ Installation via **conda** (recommended for ease of dependency management):
 conda install -c conda-forge wetlandmapper
 
 # With Google Earth Engine support
-conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio
+conda install -c conda-forge wetlandmapper geopandas earthengine-api "xee>=0.0.24,<0.1.0" dask rasterio
 
 # Complete installation with all extras
-conda install -c conda-forge wetlandmapper geopandas earthengine-api xee dask rasterio matplotlib
+conda install -c conda-forge wetlandmapper geopandas earthengine-api "xee>=0.0.24,<0.1.0" dask rasterio matplotlib scipy
 ```
 
 Alternatively, installation via **pip**:
@@ -268,6 +270,7 @@ Alternatively, installation via **pip**:
 pip install wetlandmapper                # core
 pip install "wetlandmapper[gee]"         # with GEE + shapefile support
 pip install "wetlandmapper[plot]"        # with visualisation utilities
+pip install "wetlandmapper[stats]"       # SciPy statistical tests
 pip install "wetlandmapper[all]"         # complete installation
 ```
 

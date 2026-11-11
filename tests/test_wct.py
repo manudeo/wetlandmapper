@@ -157,6 +157,19 @@ class TestClassifyWCT:
 class TestClassifyWCTEMA:
     """Tests for EMA-based WCT classification."""
 
+    def test_shallow_clear_water_is_open_water(self):
+        indices = xr.Dataset(
+            {
+                "MNDWI": xr.DataArray([[0.30]], dims=["y", "x"]),
+                "NDVI": xr.DataArray([[-0.10]], dims=["y", "x"]),
+                "NDTI": xr.DataArray([[-0.10]], dims=["y", "x"]),
+            }
+        )
+
+        result = classify_wct_ema(indices)
+
+        assert result["wetland_cover_type"].item() == 1
+
     def test_classify_wct_ema_returns_dataset(self, multispectral_ds):
         """classify_wct_ema should return a Dataset."""
         indices = compute_indices(multispectral_ds)
@@ -275,6 +288,38 @@ class TestClassifyWCTEMA:
 
 
 class TestClassifyWCTEMALevel2:
+    def test_level2_shallow_clear_water_is_level1_open_water(self):
+        indices = xr.Dataset(
+            {
+                "MNDWI": xr.DataArray([[0.30]], dims=["y", "x"]),
+                "NDVI": xr.DataArray([[-0.10]], dims=["y", "x"]),
+                "NDTI": xr.DataArray([[-0.10]], dims=["y", "x"]),
+            }
+        )
+
+        result = classify_wct_ema_level2(indices)
+
+        assert result["wetland_cover_type_level2"].item() == 2
+        assert result["wetland_cover_type"].item() == 1
+
+    def test_non_dry_level2_classes_collapse_to_level1_wetland_classes(self):
+        levels = np.array([-0.10, 0.10, 0.30, 0.60, 0.80])
+        mndwi, ndvi, ndti = np.meshgrid(levels, levels, levels, indexing="ij")
+        indices = xr.Dataset(
+            {
+                "MNDWI": xr.DataArray(mndwi, dims=["w", "v", "t"]),
+                "NDVI": xr.DataArray(ndvi, dims=["w", "v", "t"]),
+                "NDTI": xr.DataArray(ndti, dims=["w", "v", "t"]),
+            }
+        )
+
+        result = classify_wct_ema_level2(indices)
+        level1 = result["wetland_cover_type"].values
+        level2 = result["wetland_cover_type_level2"].values
+
+        level1_by_level2 = np.array([0, 1, 1, 2, 2, 5, 3, 3, 4, 4, 4, 5, 4])
+        np.testing.assert_array_equal(level1, level1_by_level2[level2])
+
     def test_classify_wct_ema_level2_returns_dataset(self, multispectral_ds):
         indices = compute_indices(multispectral_ds)
         result = classify_wct_ema_level2(indices)

@@ -125,6 +125,11 @@ WCT_LEVEL2_COLORS: dict[int, str] = {
     12: "#00a6ca",  # Vegetation-masked Water Fringe
 }
 
+_LEVEL2_TO_LEVEL1 = np.array(
+    [0, 1, 1, 2, 2, 5, 3, 3, 4, 4, 4, 5, 4],
+    dtype=np.int8,
+)
+
 WCT_EMA_QUARTILE_BOUNDARIES: dict = {
     "description": "Equal-width bins over positive [0,1] range with n_parts=4",
     "boundaries": [0.0, 0.25, 0.50, 0.75, 1.00],
@@ -177,7 +182,7 @@ def build_ema_lookup_table(n_parts: int = 4) -> np.ndarray:
      3   w >= 2        1 <= v <= 2    t <= 1       Submerged Aquatic Veg.
      2   w >= 2        v <= 1         t >= 2       Turbid / Sediment Water
      4   w >= 0        v >= 3         t <= 1       Emergent / Floating Veg. (*)
-     1   w >= 3        v <= 1         t <= 1       Open Clear Water
+    1   w >= 2        v <= 1         t <= 1       Open Clear Water
 
     (*) WCT 4 matches even w == 0 (negative MNDWI): dense aquatic vegetation
     completely suppresses the MNDWI water signal, so the pixel reads as dry
@@ -227,9 +232,10 @@ def build_ema_lookup_table(n_parts: int = 4) -> np.ndarray:
                 table[w, v, t] = 4
 
     # WCT 1 — Open Clear Water  (highest certainty: set last so it always wins
-    # over WCT 3/5 at the boundary levels that both rules touch)
-    # High MNDWI (w>=3), very low NDVI (v<=1), very low NDTI (t<=1)
-    for w in range(3, n + 1):  # 3, 4
+    # over WCT 3/5 at the boundary levels that both rules touch). Include w=2
+    # so Level-2 shallow open water collapses to Level-1 open water, not dry.
+    # Moderate-high MNDWI (w>=2), very low NDVI (v<=1), very low NDTI (t<=1)
+    for w in range(2, n + 1):  # 2, 3, 4
         for v in range(0, 2):  # 0, 1
             for t in range(0, 2):  # 0, 1
                 table[w, v, t] = 1
@@ -567,10 +573,31 @@ def classify_wct_ema_level2(
     )
     wct_l2.name = "wetland_cover_type_level2"
 
+    # Collapse extended classes to their Level-1 parent rather than running
+    # the narrower Level-1 lookup independently and losing extended wet classes.
+    wct_l1 = _mask_missing(
+        xr.DataArray(
+            _LEVEL2_TO_LEVEL1[l2_vals],
+            dims=mndwi.dims,
+            coords=mndwi.coords,
+        ),
+        _valid_mask(indices),
+    )
+    wct_l1 = _finalise(
+        wct_l1,
+        indices,
+        method="EMA-combination-lookup-level1-collapse",
+        extra_attrs={
+            "n_parts": n_parts,
+            "step": step,
+            "boundaries": [k * step for k in range(n_parts + 1)],
+        },
+    )
+
     return xr.Dataset(
         {
             "wetland_cover_type_level2": wct_l2,
-            "wetland_cover_type": level1["wetland_cover_type"],
+            "wetland_cover_type": wct_l1,
             "combination_code": level1["combination_code"],
             "wvt_code": level1["wvt_code"],
         },

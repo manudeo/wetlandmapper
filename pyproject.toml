@@ -30,6 +30,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
+    "pandas>=1.5",
     "xarray>=2023.1",
     "rioxarray>=0.15",
 ]
@@ -38,16 +39,15 @@ dependencies = [
 gee = [
     "earthengine-api>=0.1.370",
     "rasterio>=1.3",
-    "xee>=0.0.5",
+    "xee>=0.0.24,<0.1.0",
     "dask>=2023.1",
     "geopandas>=0.14",   # for shapefile / GeoJSON file AOI support
 ]
 plot = [
     "matplotlib>=3.7",
-    "hvplot>=0.9",
-    "holoviews>=1.18",
-    "bokeh>=3.3",
-    "panel>=1.3",
+]
+stats = [
+    "scipy>=1.9",
 ]
 dev = [
     "pytest>=7.4",
@@ -64,7 +64,7 @@ dev = [
     "twine>=5.0",
 ]
 all = [
-    "wetlandmapper[gee,plot,dev]"
+    "wetlandmapper[gee,plot,stats,dev]"
 ]
 
 [project.urls]

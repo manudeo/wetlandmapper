@@ -20,14 +20,19 @@ With optional dependencies:
 .. code-block:: bash
 
    pip install "wetlandmapper[gee]"    # Google Earth Engine support
-   pip install "wetlandmapper[plot]"   # matplotlib, hvplot, bokeh
+   pip install "wetlandmapper[plot]"   # matplotlib
+   pip install "wetlandmapper[stats]"  # SciPy p-values for linear_trend
    pip install "wetlandmapper[all]"    # everything
+
+SciPy is optional. Without SciPy, ``linear_trend()`` uses a normal approximation
+for p-values; install the `stats` extra to use Student's t-distribution.
 
 Requirements
 ------------
 
 * Python >= 3.10
 * numpy >= 1.24
+* pandas >= 1.5
 * xarray >= 2023.1
 * rioxarray >= 0.15
 
