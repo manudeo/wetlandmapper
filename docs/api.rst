@@ -51,6 +51,12 @@ Terrain Analysis
 .. automodule:: wetlandmapper.terrain
    :members:
 
+Sensor harmonisation
+--------------------
+
+.. automodule:: wetlandmapper.sensor_harmonize
+   :members:
+
 Plotting
 --------
 

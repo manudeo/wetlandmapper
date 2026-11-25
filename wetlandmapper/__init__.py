@@ -59,6 +59,10 @@ from .indices import (
     compute_ndwi,
     compute_water_indices,
 )
+from .sensor_harmonize import (
+    SensorOffsets,
+    estimate_sensor_offsets,
+)
 from .terrain import (
     compute_local_range,
     compute_slope,
@@ -81,6 +85,9 @@ from .wct import (
 )
 
 __all__ = [
+    # Sensor harmonisation
+    "SensorOffsets",
+    "estimate_sensor_offsets",
     # Analysis utilities
     "last_occurrence",
     "linear_trend",

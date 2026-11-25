@@ -94,6 +94,7 @@ Authenticate once:  ``earthengine authenticate``
 from __future__ import annotations
 
 import datetime
+import json
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence, cast
@@ -429,12 +430,38 @@ def _add_custom_indices(
 # ---------------------------------------------------------------------------
 
 
+def _apply_index_offsets(
+    collection: EEImageCollection, offsets: dict[str, float] | None
+) -> EEImageCollection:
+    """Add a constant to index bands of every image (inter-sensor correction, server-side).
+
+    Every named band is shifted and re-cast to an unbounded float, also when the offset is zero
+    (the reference sensor). Earth Engine records the value range of a band in its type, and a
+    shifted band (for example Float<-1.04, 0.96>) cannot be merged with an unshifted one
+    (Float<-1, 1>) into one collection; giving all missions the same type avoids that.
+    """
+    if not offsets:
+        return collection
+    shifts = {name: float(off) for name, off in offsets.items()}
+
+    def _shift(img):
+        for name, off in shifts.items():
+            img = img.addBands(
+                img.select(name).add(off).toFloat().rename(name), overwrite=True
+            )
+        return img
+
+    return collection.map(_shift)
+
+
 def _build_landsat_all(
     ee_geom: EEGeometry,
     start: str,
     end: str,
     max_cloud_cover: float,
     use_slc_off: bool,
+    offsets: dict[str, dict[str, float]] | None = None,
+    landsat7_end: str | None = None,
 ) -> EEImageCollection:
     """Build a merged Landsat 4-9 collection with harmonised band names.
 
@@ -457,6 +484,15 @@ def _build_landsat_all(
         Maximum cloud cover (%) per image.
     use_slc_off : bool
         If False, Landsat 7 images after 2003-05-31 are excluded.
+    offsets : dict, optional
+        ``{index: {mission: value}}`` added to each index of the scenes of a
+        mission before the merge (inter-sensor correction onto Landsat 8; see
+        :mod:`wetlandmapper.sensor_harmonize`).  ``None`` leaves the indices
+        as computed.
+    landsat7_end : str, optional
+        Last date (ISO 8601) from which Landsat 7 scenes are used.  Use it to
+        leave out late-life Landsat 7 (drifting orbit) when Landsat 8/9 cover
+        the period.
 
     Returns
     -------
@@ -481,6 +517,10 @@ def _build_landsat_all(
             eff_end = min(eff_end, _L7_SLC_FAILURE_DATE)
             if eff_start >= eff_end:
                 continue  # SLC-on period entirely outside requested range
+        if mission == "Landsat7" and landsat7_end:
+            eff_end = min(eff_end, landsat7_end[:10])
+            if eff_start >= eff_end:
+                continue
 
         col = (
             ee.ImageCollection(_COLLECTION_ID[mission])
@@ -519,6 +559,12 @@ def _build_landsat_all(
             )
         )
 
+        # Indices per mission, then the inter-sensor correction of that mission
+        col = col.map(lambda img: _add_indices(img, _BAND_MAP["_harmonised"]))
+        if offsets:
+            per_mission = {idx: vals.get(mission, 0.0) for idx, vals in offsets.items()}
+            col = _apply_index_offsets(col, per_mission)
+
         sub_collections.append(col)
 
     if not sub_collections:
@@ -531,10 +577,6 @@ def _build_landsat_all(
     merged = sub_collections[0]
     for col in sub_collections[1:]:
         merged = merged.merge(col)
-
-    # Add spectral indices using harmonised band names
-    harm_bands = _BAND_MAP["_harmonised"]
-    merged = merged.map(lambda img: _add_indices(img, harm_bands))
 
     return merged
 
@@ -1066,6 +1108,98 @@ def _build_single_sensor_collection(
     return collection, bm
 
 
+def _resolve_harmonization(
+    harmonize: Any,
+    aoi: "dict | str",
+    indices_list: list[str],
+    start: str,
+    end: str,
+    months: list[int] | None,
+    max_cloud_cover: float,
+    landsat7_end: str | None,
+    buffer_m: float,
+    project: str | None,
+    info: dict | None,
+) -> dict[str, dict[str, float]] | None:
+    """Turn the ``harmonize`` argument into ``{index: {mission: additive correction}}``.
+
+    ``"auto"`` estimates the offsets inside the working window (local), ``"global"``
+    uses the fixed table of Ganga Plain medians, ``False``/``"off"``/``None`` switches the
+    correction off, a :class:`~wetlandmapper.sensor_harmonize.SensorOffsets` or a dict
+    (``{mission: value}`` for a single built-in index, or ``{index: {mission: value}}``)
+    supplies the corrections directly.
+    """
+    from . import sensor_harmonize as sh
+
+    if isinstance(months, int):
+        months = [months]
+    if harmonize in (False, None, "off", "none"):
+        return None
+    builtin = [i for i in indices_list if i in _VALID_INDICES]
+    if not builtin:
+        return None
+    out: dict[str, dict[str, float]] = {}
+
+    if isinstance(harmonize, sh.SensorOffsets):
+        if harmonize.index in builtin:
+            out[harmonize.index] = dict(harmonize.correction)
+            if info is not None:
+                info[harmonize.index] = harmonize.to_dict()
+        return out or None
+
+    if isinstance(harmonize, dict):
+        nested = all(isinstance(v, dict) for v in harmonize.values())
+        if nested:
+            out = {k: {m: float(x) for m, x in v.items()} for k, v in harmonize.items() if k in builtin}
+        else:
+            if len(builtin) != 1:
+                raise ValueError(
+                    "A flat harmonize dict {mission: value} is ambiguous with several indices; "
+                    "use {index: {mission: value}}."
+                )
+            out = {builtin[0]: {m: float(x) for m, x in harmonize.items()}}
+        if info is not None:
+            info.update({k: {"correction": v, "source": "user"} for k, v in out.items()})
+        return out or None
+
+    if harmonize not in ("auto", "global", True):
+        raise ValueError(
+            "harmonize must be 'auto', 'global', False, a SensorOffsets object or a dict, "
+            f"got {harmonize!r}."
+        )
+
+    missions = sh.missions_in_window(start, end, landsat7_end)
+    for idx in builtin:
+        if harmonize == "global":
+            g = sh.GLOBAL_PAIR_OFFSETS.get(idx)
+            if g is None:
+                warnings.warn(
+                    f"No global sensor offsets are available for {idx}; it is left uncorrected.",
+                    UserWarning, stacklevel=4)
+                continue
+            out[idx] = sh.chain_corrections(g)
+            if info is not None:
+                info[idx] = {"correction": out[idx], "source": "global"}
+            continue
+        try:
+            res = sh.estimate_sensor_offsets(
+                aoi, index=idx, months=months, missions=missions,
+                max_cloud_cover=max_cloud_cover, estimation_buffer_m=buffer_m,
+                fallback="global" if idx in sh.GLOBAL_PAIR_OFFSETS else "error",
+                project=project,
+            )
+        except Exception as exc:  # network, quota or no fallback: leave this index as it is
+            warnings.warn(
+                f"Sensor offsets for {idx} could not be estimated ({type(exc).__name__}: "
+                f"{str(exc)[:160]}); {idx} is left uncorrected.",
+                UserWarning, stacklevel=4)
+            continue
+        out[idx] = dict(res.correction)
+        if info is not None:
+            info[idx] = res.to_dict()
+    return out or None
+
+
 def _build_processed_collection(
     aoi: "dict | str",
     start: str,
@@ -1094,6 +1228,11 @@ def _build_processed_collection(
     reduction_method: str = "median",
     percentile: float = 50.0,
     track_count: bool = False,
+    harmonize: Any = "auto",
+    harmonize_buffer_m: float = 0.0,
+    landsat7_end: str | None = None,
+    harmonize_info: dict | None = None,
+    project: str | None = None,
 ) -> tuple[EEImageCollection, EEGeometry, list[str]]:
     """Build and process collection for fetch/fetch_xee with shared behavior."""
     sensor = _resolve_sensor(sensor)
@@ -1162,7 +1301,14 @@ def _build_processed_collection(
 
     # Build collection (merged or single sensor)
     if sensor == "LandsatAll":
-        collection = _build_landsat_all(ee_geom, start, end, max_cloud_cover, use_slc_off)
+        offsets = _resolve_harmonization(
+            harmonize, aoi, indices_list, start, end, months, max_cloud_cover,
+            landsat7_end, harmonize_buffer_m, project, harmonize_info,
+        )
+        collection = _build_landsat_all(
+            ee_geom, start, end, max_cloud_cover, use_slc_off,
+            offsets=offsets, landsat7_end=landsat7_end,
+        )
         sensor_bands = _BAND_MAP["_harmonised"]
     elif sensor == "MODISAll":
         collection = _build_modis_all(ee_geom, start, end, max_cloud_cover)
@@ -1452,6 +1598,9 @@ def fetch(
     reduction_method: str = "median",
     percentile: float = 50.0,
     return_scene_count: bool = False,
+    harmonize: Any = "auto",
+    harmonize_buffer_m: float = 0.0,
+    landsat7_end: str | None = None,
 ) -> "xr.DataArray | xr.Dataset | tuple[xr.DataArray | xr.Dataset, xr.DataArray]":
     """Retrieve spectral indices from GEE as an xarray object (immediate download).
 
@@ -1521,6 +1670,36 @@ def fetch(
     percentile : float
         Percentile to use when ``reduction_method="percentile"``.
         Must be between 0 and 100 inclusive. Default 50.0.
+    harmonize : {"auto", "global", False}, SensorOffsets or dict
+        Inter-sensor calibration of the built-in indices when ``sensor="LandsatAll"``
+        (ignored for a single sensor).  TM/ETM+ and OLI return slightly different
+        index values for the same ground, which would be read as a trend when the
+        historic part of a series is TM/ETM+ and the recent part OLI.
+
+        - ``"auto"`` (default): the offsets Landsat 5 -> 7 -> 8 and 8 -> 9 are
+          estimated **inside the working window** (``aoi``, the requested
+          ``months`` and ``max_cloud_cover``) from fixed overlap years, server-side,
+          and added to the index of each scene before compositing, bringing all
+          sensors onto the Landsat 8 scale.  If the window has too few pixels or
+          years for a pair, the Ganga Plain fallback in
+          :data:`wetlandmapper.sensor_harmonize.GLOBAL_PAIR_OFFSETS` is used with a
+          warning (MNDWI only).  The estimates are cached per session.
+        - ``"global"``: use the fallback table only (no extra Earth Engine calls).
+        - ``False``: no correction (index as computed from each sensor).
+        - a :class:`~wetlandmapper.sensor_harmonize.SensorOffsets` from
+          :func:`wetlandmapper.sensor_harmonize.estimate_sensor_offsets`, or a
+          dict ``{mission: value}`` (one index) or ``{index: {mission: value}}``:
+          corrections supplied by the user.
+
+        The corrections used are stored in ``result.attrs["sensor_offsets"]`` as JSON.
+    harmonize_buffer_m : float
+        Buffer (metres) around ``aoi`` for the offset estimation only.  Default 0.
+        A buffer lets small windows reach the minimum pixel count.
+    landsat7_end : str, optional
+        Last date (ISO 8601) from which Landsat 7 scenes enter a
+        ``sensor="LandsatAll"`` collection.  Use it to leave out late-life
+        Landsat 7 (drifting orbit) where Landsat 8/9 cover the period, for example
+        ``"2013-03-17"``.  Default ``None`` (all Landsat 7 scenes).
     return_scene_count : bool
         If ``True``, also return a per-pixel count of cloud-free scenes
         that fed each temporal composite, as a second, separate object —
@@ -1664,6 +1843,7 @@ def fetch(
     except Exception:
         init(project=project)
 
+    _hinfo: dict = {}
     collection, ee_geom, indices_list = _build_processed_collection(
         aoi=aoi,
         start=start,
@@ -1692,6 +1872,11 @@ def fetch(
         reduction_method=reduction_method,
         percentile=percentile,
         track_count=return_scene_count,
+        harmonize=harmonize,
+        harmonize_buffer_m=harmonize_buffer_m,
+        landsat7_end=landsat7_end,
+        harmonize_info=_hinfo,
+        project=project,
     )
 
     n_images_info = collection.size().getInfo()
@@ -1767,6 +1952,8 @@ def fetch(
     else:
         result = combined
 
+    if _hinfo:
+        result.attrs["sensor_offsets"] = json.dumps(_hinfo, default=float)
     if return_scene_count:
         return result, n_obs
     return result
@@ -1807,6 +1994,9 @@ def fetch_xee(
     reduction_method: str = "median",
     percentile: float = 50.0,
     return_scene_count: bool = False,
+    harmonize: Any = "auto",
+    harmonize_buffer_m: float = 0.0,
+    landsat7_end: str | None = None,
 ) -> "xr.DataArray | xr.Dataset | tuple[xr.DataArray | xr.Dataset, xr.DataArray]":
     """Retrieve spectral indices from GEE as a lazy Dask-backed xarray via xee.
 
@@ -1868,6 +2058,36 @@ def fetch_xee(
     percentile : float
         Percentile to use when ``reduction_method="percentile"``.
         Must be between 0 and 100 inclusive. Default 50.0.
+    harmonize : {"auto", "global", False}, SensorOffsets or dict
+        Inter-sensor calibration of the built-in indices when ``sensor="LandsatAll"``
+        (ignored for a single sensor).  TM/ETM+ and OLI return slightly different
+        index values for the same ground, which would be read as a trend when the
+        historic part of a series is TM/ETM+ and the recent part OLI.
+
+        - ``"auto"`` (default): the offsets Landsat 5 -> 7 -> 8 and 8 -> 9 are
+          estimated **inside the working window** (``aoi``, the requested
+          ``months`` and ``max_cloud_cover``) from fixed overlap years, server-side,
+          and added to the index of each scene before compositing, bringing all
+          sensors onto the Landsat 8 scale.  If the window has too few pixels or
+          years for a pair, the Ganga Plain fallback in
+          :data:`wetlandmapper.sensor_harmonize.GLOBAL_PAIR_OFFSETS` is used with a
+          warning (MNDWI only).  The estimates are cached per session.
+        - ``"global"``: use the fallback table only (no extra Earth Engine calls).
+        - ``False``: no correction (index as computed from each sensor).
+        - a :class:`~wetlandmapper.sensor_harmonize.SensorOffsets` from
+          :func:`wetlandmapper.sensor_harmonize.estimate_sensor_offsets`, or a
+          dict ``{mission: value}`` (one index) or ``{index: {mission: value}}``:
+          corrections supplied by the user.
+
+        The corrections used are stored in ``result.attrs["sensor_offsets"]`` as JSON.
+    harmonize_buffer_m : float
+        Buffer (metres) around ``aoi`` for the offset estimation only.  Default 0.
+        A buffer lets small windows reach the minimum pixel count.
+    landsat7_end : str, optional
+        Last date (ISO 8601) from which Landsat 7 scenes enter a
+        ``sensor="LandsatAll"`` collection.  Use it to leave out late-life
+        Landsat 7 (drifting orbit) where Landsat 8/9 cover the period, for example
+        ``"2013-03-17"``.  Default ``None`` (all Landsat 7 scenes).
     return_scene_count : bool
         If ``True``, also return a per-pixel count of cloud-free scenes
         that fed each temporal composite, as a second, separate lazy
@@ -1938,6 +2158,7 @@ def fetch_xee(
     except Exception:
         init(project=project)
 
+    _hinfo: dict = {}
     collection, ee_geom, indices_list = _build_processed_collection(
         aoi=aoi,
         start=start,
@@ -1966,6 +2187,11 @@ def fetch_xee(
         reduction_method=reduction_method,
         percentile=percentile,
         track_count=return_scene_count,
+        harmonize=harmonize,
+        harmonize_buffer_m=harmonize_buffer_m,
+        landsat7_end=landsat7_end,
+        harmonize_info=_hinfo,
+        project=project,
     )
 
     # xee requires a bounding box — arbitrary polygon → one-pixel bug
@@ -2063,6 +2289,8 @@ def fetch_xee(
     else:
         result = ds_lazy[indices_list]
 
+    if _hinfo:
+        result.attrs["sensor_offsets"] = json.dumps(_hinfo, default=float)
     if return_scene_count:
         return result, cast("xr.DataArray", n_obs)
     return result
