@@ -8,7 +8,7 @@
 - WM-4 completed: Offline climate-adaptive decision-logic tests added; weekly live-GEE workflow added.
 - WM-5 completed: dead property-level climate filter removed.
 - WM-6 completed: assert-based invariant replaced with RuntimeError and NaN-safe validation.
-- WM-7 completed: optional min_support guard for New/Lost with tests.
+- WM-7 completed: New and Lost follow the published definition (ΔW = ±nYear, complete flips) with tests; the interim min_support guard is removed. `min_valid_window` counts valid years per pixel and window.
 - WM-8 completed: documentation corrections for adaptivity wording and limitations.
 - WM-9 completed (hardening item addressed): warning on high-NaN use of nan_policy='total'.
 

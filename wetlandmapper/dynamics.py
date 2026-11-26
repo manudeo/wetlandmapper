@@ -63,7 +63,7 @@ def classify_dynamics(
     thresholdPersis: float = 75.0,
     water_threshold: float = 0.0,
     nan_policy: str = "total",
-    min_support: float | None = None,
+    min_valid_window: int | None = None,
     min_valid_obs: int | None = None,
     # backward-compatibility alias only — no mndwi= alias (function is index-agnostic)
     mndwi_threshold: float | None = None,
@@ -77,19 +77,26 @@ def classify_dynamics(
     * Historic wet count  *W_historic*  (first ``nYear`` years)
     * Recent wet count    *W_recent*    (last  ``nYear`` years)
 
+    and the change ``ΔW = W_recent − W_historic``.
+
     **Class priority (strictly exclusive — a pixel receives exactly one class):**
 
-    =========  ====  ===================================================
-    Class      Code  Primary condition
-    =========  ====  ===================================================
-    Persistent  10   W% ≥ thresholdPersis
-    New          2   W_historic = 0  AND  W_recent > 0  (newly appeared)
-    Lost         3   W_historic > 0  AND  W_recent = 0  (fully gone)
-    Intensifying 5   W% ≥ thresholdWet  AND  delta > 0  (not New)
-    Diminishing  4   W% ≥ thresholdWet  AND  delta < 0  (not Lost)
-    Intermittent 6   W% ≥ thresholdWet  AND  no directional signal
-    Non-wetland  0   W% < thresholdWet
-    =========  ====  ===================================================
+    ============  ====  ====================================================
+    Class         Code  Primary condition
+    ============  ====  ====================================================
+    Persistent     10   W% ≥ thresholdPersis
+    New             2   ΔW = +nYear: W_historic = 0 and W_recent = nYear
+    Lost            3   ΔW = −nYear: W_historic = nYear and W_recent = 0
+    Intensifying    5   W% ≥ thresholdWet  AND  0 < ΔW < nYear
+    Diminishing     4   W% ≥ thresholdWet  AND  −nYear < ΔW < 0
+    Intermittent    6   W% ≥ thresholdWet  AND  no directional signal
+    Non-wetland     0   W% < thresholdWet
+    ============  ====  ====================================================
+
+    New and Lost are complete regime flips (dry in every year of one window and
+    wet in every year of the other) and are the only classes that do not need
+    ``W% ≥ thresholdWet``. This is the definition of Singh & Sinha (2022) and
+    of the wetlandmapper paper.
 
     Each priority is applied only to **unclassified** pixels (code = 0),
     preventing any pixel from receiving more than one class code even when
@@ -128,24 +135,26 @@ def classify_dynamics(
             frequency is the fraction of *cloud-free* years that were wet.
             The historic/recent windows are also normalised by their own
             valid counts so that ``delta`` is expressed as a fraction
-            in [−1, +1].  Use when cloud masking produces substantial
-            or spatially clustered NaN values.
+            in [−1, +1], and New / Lost are the complete flips on the valid
+            years of each window (fraction 0 against fraction 1).  Use when
+            cloud masking produces substantial or spatially clustered NaN
+            values.  Pixels with too few valid years in a window are returned
+            as NaN, not as Non-wetland (see ``min_valid_window``).
 
-    min_support : float, optional
-        Minimum overall wet frequency (%) required before ``New`` (2) or
-        ``Lost`` (3) may be retained. Pixels assigned these classes with
-        ``W% < min_support`` are demoted to ``Non-wetland`` (0).
-
-        ``None`` (default) preserves legacy behaviour for reproducibility.
-        Setting ``min_support=thresholdWet`` approximates stricter support,
-        but cannot fully prevent false directional labels when stationary
-        inundation probability satisfies ``p >= min_support/100``.
+    min_valid_window : int, optional
+        *(Only active when nan_policy="valid".)* Minimum number of valid
+        (non-NaN) years **at the pixel** in each of the historic and the recent
+        window.  A pixel with fewer valid years in either window cannot be
+        assigned a directional class (New, Lost, Intensifying, Diminishing,
+        Intermittent) and is returned as NaN (insufficient data); a pixel
+        that is Persistent on its valid years keeps that class.  Default
+        ``None`` = ``ceil(0.8 * nYear)``.
 
     min_valid_obs : int, optional
         *(Only active when nan_policy="valid".)* Minimum number of non-NaN
-        observations required for classification.  Pixels with fewer valid
-        observations are set to NaN in the output.  Default ``None``
-        (no minimum enforced).
+        observations at the pixel over the whole series required for
+        classification.  Pixels with fewer valid observations are set to NaN
+        in the output.  Default ``None`` (no minimum enforced).
     mndwi_threshold : float, optional
         **Deprecated.** Use ``water_threshold`` instead.
 
@@ -176,10 +185,10 @@ def classify_dynamics(
     transferability; set parameters explicitly when reproducing published
     areal totals.
 
-    Class-definition divergence: ``New`` and ``Lost`` use any non-zero
-    support in the recent/historic windows, not strict full-window
-    occupancy/absence. Use ``min_support`` to suppress low-support
-    directional assignments.
+    Before version 1.3 ``New`` and ``Lost`` were assigned on any non-zero support
+    (W_historic = 0 and W_recent > 0, and the reverse), which differed from the
+    published definition; see the changelog.  Results from earlier versions are
+    not comparable for these two classes.
     """
     # ------------------------------------------------------------------
     # Backward-compatibility shim
@@ -218,8 +227,11 @@ def classify_dynamics(
             f"nan_policy must be one of {_VALID_NAN_POLICIES}, "
             f"got {nan_policy!r}."
         )
-    if min_support is not None and not (0 <= min_support <= 100):
-        raise ValueError("min_support must be in the range [0, 100] or None.")
+    if min_valid_window is not None and not (1 <= int(min_valid_window) <= nYear):
+        raise ValueError(
+            f"min_valid_window must be between 1 and nYear ({nYear}) or None, "
+            f"got {min_valid_window!r}."
+        )
 
     if nan_policy == "total":
         nan_fraction = float(water_index.isnull().mean().values)
@@ -250,14 +262,17 @@ def classify_dynamics(
 
         w_percent = (wall / n_time) * 100
 
-        # Trend window: raw counts in [0, nYear]
+        # Trend window: raw counts in [0, nYear]; a missing year counts as dry,
+        # so a complete flip needs every year of the window to be observed.
         # ── Classification helpers (total mode) ───────────────────────
-        def _new(wh, wr):    return (wh == 0)  & (wr > 0)
-        def _lost(wh, wr):   return (wh > 0)   & (wr == 0)
+        def _new(wh, wr):    return (wh == 0)      & (wr == nYear)    # ΔW = +nYear
+        def _lost(wh, wr):   return (wh == nYear)  & (wr == 0)        # ΔW = −nYear
         def _intens(wp, wh, wr): return (wp >= thresholdWet) & (wr > wh) & ~_new(wh, wr)
         def _dimin(wp, wh, wr):  return (wp >= thresholdWet) & (wr < wh) & ~_lost(wh, wr)
 
         wh_arg, wr_arg = whistoric, wrecent
+        window_ok = None
+        min_win = 0          # not used: every year of the window must be observed and wet or dry
 
     else:
         # Valid mode: per-pixel denominator
@@ -274,9 +289,20 @@ def classify_dynamics(
         n_valid = water_index.count(dim="time")
         w_percent = f_total * 100
 
+        # Per-pixel number of valid years in each window
+        min_win = (
+            int(min_valid_window)
+            if min_valid_window is not None
+            else int(np.ceil(0.8 * nYear))
+        )
+        window_ok = (his_slice.count(dim="time") >= min_win) & (
+            rec_slice.count(dim="time") >= min_win
+        )
+
         # ── Classification helpers (valid mode) ───────────────────────
-        def _new(fh, fr):    return (fh == 0)  & (fr > 0)
-        def _lost(fh, fr):   return (fh > 0)   & (fr == 0)
+        # Complete flips on the valid years of each window (fractions 0 and 1)
+        def _new(fh, fr):    return (fh == 0)  & (fr == 1)
+        def _lost(fh, fr):   return (fh == 1)  & (fr == 0)
         def _intens(wp, fh, fr): return (wp >= thresholdWet) & (fr > fh) & ~_new(fh, fr)
         def _dimin(wp, fh, fr):  return (wp >= thresholdWet) & (fr < fh) & ~_lost(fh, fr)
 
@@ -319,14 +345,6 @@ def classify_dynamics(
         classification,
     )
 
-    # 3b — Optional support guard for directional edge classes
-    if min_support is not None:
-        classification = xr.where(
-            ((classification == 2) | (classification == 3)) & (w_percent < min_support),
-            np.int8(0),
-            classification,
-        )
-
     # 4 — Intensifying
     classification = xr.where(
         unset(classification) & _intens(w_percent, wh_arg, wr_arg),
@@ -352,9 +370,15 @@ def classify_dynamics(
 
     # ------------------------------------------------------------------
     # Stage 3: Mask insufficient-data pixels (valid mode only)
+    #
+    # A pixel with too few valid years in the historic or the recent window
+    # cannot be judged for change and is returned as NaN (insufficient data),
+    # never as Non-wetland.  Persistent stands on its valid years.
     # ------------------------------------------------------------------
-    if nan_policy == "valid" and min_valid_obs is not None:
-        classification = classification.where(n_valid >= min_valid_obs)
+    if nan_policy == "valid":
+        classification = classification.where(window_ok | (classification == 10))
+        if min_valid_obs is not None:
+            classification = classification.where(n_valid >= min_valid_obs)
 
     # ------------------------------------------------------------------
     # Sanity check: no pixel should have a code outside valid set
@@ -398,7 +422,7 @@ def classify_dynamics(
         thresholdPersis=thresholdPersis,
         water_threshold=water_threshold,
         nan_policy=nan_policy,
-        min_support=min_support,
+        min_valid_window=min_win,
         n_timesteps=int(n_time),
         class_codes=str(DYNAMICS_CLASSES),
         references=(

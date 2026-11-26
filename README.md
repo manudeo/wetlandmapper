@@ -50,10 +50,10 @@ Use `compute_water_indices()` to compare all indices on your data.
 |------|-------|-------------|
 | 10 | **Persistent** | Wet ≥ threshold % of all observations |
 | 6 | **Intermittent** | Wet enough, but no directional trend |
-| 5 | **Intensifying** | Increasing wet frequency over time |
-| 4 | **Diminishing** | Decreasing wet frequency over time |
-| 3 | **Lost** | Wet historically, dry in recent period |
-| 2 | **New** | Dry historically, wet in recent period |
+| 5 | **Intensifying** | Wet enough, wet years increase from the historic to the recent window (partial change) |
+| 4 | **Diminishing** | Wet enough, wet years decrease from the historic to the recent window (partial change) |
+| 3 | **Lost** | Complete flip: wet in every year of the historic window, dry in every year of the recent window |
+| 2 | **New** | Complete flip: dry in every year of the historic window, wet in every year of the recent window |
 | 0 | **Non-wetland** | Below minimum wet-frequency threshold |
 
 ## Wetland Cover Types (WCTs)

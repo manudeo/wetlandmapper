@@ -91,70 +91,96 @@ class TestClassifyDynamics:
         br = result.isel(y=slice(hy, None), x=slice(hx, None))
         assert (br == 0).all(), "BR quadrant should be Non-wetland"
 
-    def test_min_support_none_reproduces_default_output(self, mndwi_mixed):
-        """min_support=None should be bit-for-bit identical to legacy behavior."""
-        legacy = classify_dynamics(mndwi_mixed, nYear=3)
-        guarded = classify_dynamics(mndwi_mixed, nYear=3, min_support=None)
-        assert legacy.identical(guarded)
+    # ------------------------------------------------------------------
+    # New / Lost: complete flips (ΔW = ±nYear), as in Singh & Sinha (2022)
+    # ------------------------------------------------------------------
 
-    def test_min_support_demotes_single_probe_new_and_lost(self):
-        """Single-observation New/Lost evidence should be demoted when support is high."""
-        n_time = 40
-        n_year = 5
+    @staticmethod
+    def _series(n_time=40, wet_idx=(), nan_idx=(), n_pix=1):
         times = pd.date_range("2000-01-01", periods=n_time, freq="YS")
-        data = np.full((n_time, 1, 2), -0.2, dtype=float)
+        data = np.full((n_time, 1, n_pix), -0.2, dtype=float)
+        for i in wet_idx:
+            data[i] = 0.4
+        for i in nan_idx:
+            data[i] = np.nan
+        return xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
 
-        # Pixel 0: wet only in final year -> New under legacy behavior
-        data[-1, 0, 0] = 0.4
-        # Pixel 1: wet only in first year -> Lost under legacy behavior
-        data[0, 0, 1] = 0.4
+    def test_single_wet_year_is_not_new_or_lost(self):
+        """One wet year at either end is not a regime flip (it was New/Lost before 1.3)."""
+        n_time, n_year = 40, 5
+        data = self._series(n_time, wet_idx=(), n_pix=2)
+        data.values[-1, 0, 0] = 0.4          # wet in the final year only
+        data.values[0, 0, 1] = 0.4           # wet in the first year only
+        out = classify_dynamics(data, nYear=n_year, thresholdWet=25, thresholdPersis=75)
+        assert int(out.sel(y=0, x=0).item()) == 0
+        assert int(out.sel(y=0, x=1).item()) == 0
 
-        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+    def test_complete_flip_is_new_and_lost_without_wet_percent_filter(self):
+        """Wet in all recent years and none of the historic years is New even at W% < thresholdWet."""
+        n_time, n_year = 40, 5
+        new = self._series(n_time, wet_idx=range(n_time - n_year, n_time))
+        lost = self._series(n_time, wet_idx=range(0, n_year))
+        kw = dict(nYear=n_year, thresholdWet=50, thresholdPersis=90)        # W% = 12.5 < 50
+        assert int(classify_dynamics(new, **kw).item()) == 2
+        assert int(classify_dynamics(lost, **kw).item()) == 3
 
-        no_guard = classify_dynamics(
-            da,
-            nYear=n_year,
-            thresholdWet=25,
-            thresholdPersis=75,
-        )
-        with_guard = classify_dynamics(
-            da,
-            nYear=n_year,
-            thresholdWet=25,
-            thresholdPersis=75,
-            min_support=50,
-        )
+    def test_partial_change_is_intensifying_only_above_thresholdwet(self):
+        n_time, n_year = 40, 5
+        part = self._series(n_time, wet_idx=range(n_time - 4, n_time))    # 4 of 5 recent years wet, none historic
+        assert int(classify_dynamics(part, nYear=n_year, thresholdWet=25, thresholdPersis=75).item()) == 0
+        assert int(classify_dynamics(part, nYear=n_year, thresholdWet=5, thresholdPersis=75).item()) == 5
 
-        assert int(no_guard.sel(y=0, x=0).item()) == 2
-        assert int(no_guard.sel(y=0, x=1).item()) == 3
-        assert int(with_guard.sel(y=0, x=0).item()) == 0
-        assert int(with_guard.sel(y=0, x=1).item()) == 0
+    def test_total_policy_missing_recent_year_prevents_new(self):
+        """With nan_policy='total' a missing year counts as dry, so the flip is not complete."""
+        n_time, n_year = 40, 5
+        s = self._series(n_time, wet_idx=range(n_time - n_year, n_time - 1), nan_idx=(n_time - 1,))
+        assert int(classify_dynamics(s, nYear=n_year, thresholdWet=5, thresholdPersis=75).item()) != 2
 
-    def test_min_support_reduces_stationary_false_new_lost_rate(self):
-        """With min_support=thresholdWet, false New/Lost rate should be very low."""
-        rng = np.random.default_rng(42)
-        n_series = 500
-        n_time = 40
-        n_year = 5
-        p = 0.25
+    # ------------------------------------------------------------------
+    # Missing years at the pixel: nan_policy='valid' and min_valid_window
+    # ------------------------------------------------------------------
 
-        # Bernoulli wet/dry process around threshold 0.0
-        wet = rng.random((n_time, n_series)) < p
-        data = np.where(wet, 0.3, -0.3).reshape(n_time, 1, n_series)
-        times = pd.date_range("2000-01-01", periods=n_time, freq="YS")
-        da = xr.DataArray(data, dims=["time", "y", "x"], coords={"time": times})
+    def test_valid_policy_flip_on_valid_years_of_each_window(self):
+        """4 of 5 recent years valid and all wet, historic dry: New (default minimum is ceil(0.8 * nYear) = 4)."""
+        n_time, n_year = 40, 5
+        s = self._series(n_time, wet_idx=range(n_time - n_year, n_time - 1), nan_idx=(n_time - 1,))
+        out = classify_dynamics(s, nYear=n_year, thresholdWet=25, thresholdPersis=90, nan_policy="valid")
+        assert int(out.item()) == 2
 
-        result = classify_dynamics(
-            da,
-            nYear=n_year,
-            thresholdWet=50,
-            thresholdPersis=90,
-            min_support=50,
-        )
+    def test_valid_policy_too_few_valid_years_gives_nan_not_nonwetland(self):
+        n_time, n_year = 40, 5
+        s = self._series(n_time, wet_idx=range(n_time - n_year, n_time - 1), nan_idx=(n_time - 1,))
+        out = classify_dynamics(s, nYear=n_year, thresholdWet=25, thresholdPersis=90,
+                                nan_policy="valid", min_valid_window=5)
+        assert np.isnan(out.item())
 
-        vals = result.values.reshape(-1)
-        false_direction_rate = float(np.mean(np.isin(vals, [2, 3])))
-        assert false_direction_rate < 0.02
+    def test_valid_policy_single_valid_year_in_window_is_not_a_flip(self):
+        n_time, n_year = 40, 5
+        nan_recent = tuple(range(n_time - n_year, n_time - 1))                # 1 valid year left in the recent window
+        s = self._series(n_time, wet_idx=(n_time - 1,), nan_idx=nan_recent)
+        out = classify_dynamics(s, nYear=n_year, thresholdWet=25, thresholdPersis=90, nan_policy="valid")
+        assert np.isnan(out.item())
+
+    def test_valid_policy_keeps_persistent_with_sparse_windows(self):
+        n_time, n_year = 40, 5
+        s = self._series(n_time, wet_idx=range(n_time), nan_idx=tuple(range(0, 4)))      # historic window: 1 valid year
+        out = classify_dynamics(s, nYear=n_year, thresholdWet=25, thresholdPersis=90, nan_policy="valid")
+        assert int(out.item()) == 10
+
+    def test_min_valid_window_is_per_pixel(self):
+        n_time, n_year = 40, 5
+        s = self._series(n_time, wet_idx=range(n_time - n_year, n_time), n_pix=2)
+        s.values[n_time - 3 :, 0, 1] = np.nan                                  # pixel 1 loses three recent years
+        out = classify_dynamics(s, nYear=n_year, thresholdWet=25, thresholdPersis=90, nan_policy="valid")
+        assert int(out.sel(y=0, x=0).item()) == 2
+        assert np.isnan(out.sel(y=0, x=1).item())
+
+    def test_invalid_min_valid_window_raises(self, mndwi_mixed):
+        with pytest.raises(ValueError, match="min_valid_window"):
+            classify_dynamics(mndwi_mixed, nYear=3, nan_policy="valid", min_valid_window=9)
+        with pytest.raises(ValueError, match="min_valid_window"):
+            classify_dynamics(mndwi_mixed, nYear=3, nan_policy="valid", min_valid_window=0)
+
 
     def test_output_codes_are_valid(self, mndwi_mixed):
         """All output values should be valid class codes."""
@@ -272,10 +298,6 @@ class TestClassifyDynamics:
         """Unknown nan_policy should raise ValueError."""
         with pytest.raises(ValueError, match="nan_policy"):
             classify_dynamics(mndwi_mixed, nan_policy="bad_mode")
-
-    def test_invalid_min_support_raises(self, mndwi_mixed):
-        with pytest.raises(ValueError, match="min_support"):
-            classify_dynamics(mndwi_mixed, min_support=120)
 
     def test_valid_nan_policy_with_min_valid_obs_masks_sparse_pixels(self):
         """valid mode with min_valid_obs should mask insufficiently observed pixels."""

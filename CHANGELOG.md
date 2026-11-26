@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased 1.2.0]
 
 ### Changed
+- **Breaking: `classify_dynamics` now follows the published definition of New and Lost** (Singh & Sinha 2022; wetlandmapper paper): New needs `ΔW = +nYear` (dry in every year of the historic window and wet in every year of the recent window), Lost the reverse. Before, New was "no water in the historic window and any water in the recent window" and Lost the reverse, so a single wet year could create New or Lost and the areas of these two classes were far too large (about two orders of magnitude on a 30 m Ganga Plain tile). New and Lost remain the only classes that do not need `W% >= thresholdWet`. Results of earlier versions are not comparable for these two classes. The optional `min_support` guard, added during 1.2.0 development to soften the old rule, is removed.
+- **`nan_policy="valid"` now counts valid years at the pixel, in each window.** New parameter `min_valid_window` (default `ceil(0.8 * nYear)`) is the minimum number of valid years of the pixel in the historic and in the recent window. A pixel below it cannot be judged for change and is returned as NaN (insufficient data) instead of Non-wetland; a pixel that is Persistent on its valid years keeps that class. The output is then float with NaN, as with `min_valid_obs`. With `nan_policy="total"` (default) a missing year still counts as dry, so a complete flip needs every year observed.
 - `fetch` and `fetch_xee` with `sensor="LandsatAll"` now correct the built-in indices for inter-sensor differences by default (`harmonize="auto"`). The offsets Landsat 5 -> 7 -> 8 and 8 -> 9 are estimated inside the working window (server-side, from fixed overlap years, same months and cloud filter as the request) and added to the index of each scene before compositing, bringing all sensors onto the Landsat 8 scale. A window with too few pixels or years falls back to a global Ganga Plain table with a warning (MNDWI only). Use `harmonize=False` to reproduce earlier output; `harmonize="global"` uses the table without extra Earth Engine calls. The corrections used are stored in `result.attrs["sensor_offsets"]`. `LandsatAll` previously only renamed bands and applied the Collection 2 scale factor.
 - Terrain slope computation now detects coordinate units from CRS (or a documented heuristic) and supports explicit override via coord_units. This corrects projected-grid slope magnitudes.
 - AWEInsh now uses SWIR2 in the final term to match Feyisa et al. (2014) in both local and server-side implementations.
@@ -20,7 +22,6 @@ All notable changes to this project will be documented in this file.
 ### Added
 - `wetlandmapper.sensor_harmonize` (`estimate_sensor_offsets`, `SensorOffsets`, `chain_corrections`): local estimation of Landsat inter-sensor offsets, also usable on its own and as input to `harmonize=`.
 - `landsat7_end` option of `fetch` / `fetch_xee`: leave out Landsat 7 scenes after a date from a `LandsatAll` collection (for example late-life Landsat 7 with a drifting orbit where Landsat 8/9 cover the period).
-- Optional min_support guard in dynamics classification to suppress low-support New/Lost assignments while preserving legacy behavior by default.
 - Offline climate-adaptive decision-logic tests and a weekly scheduled workflow for live GEE smoke tests.
 
 ### Documentation
